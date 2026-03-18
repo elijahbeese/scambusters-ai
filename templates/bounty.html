@@ -7,226 +7,266 @@
     <h1>{{ bounty.domain }}</h1>
     <div class="page-subtitle">
       {{ bounty.bounty_id }} ·
-      <span class="badge badge-{{ bounty.status }}">{{ bounty.status }}</span>
-      {% if bounty.multiplier %} · <span style="color: var(--warn); font-family: var(--mono);">×{{ bounty.multiplier }}</span>{% endif %}
+      <span class="badge badge-{{ bounty.status }}">{{ bounty.status | upper }}</span>
+      {% if bounty.multiplier and bounty.multiplier != 1.0 %}
+      <span style="color:var(--warn);font-family:var(--mono);font-size:11px;margin-left:6px;">
+        ×{{ bounty.multiplier }}
+      </span>
+      {% endif %}
     </div>
   </div>
-  <div style="display: flex; gap: 8px;">
-    <a href="/" class="btn btn-ghost">← Board</a>
-    {% if bounty.status in ('complete', 'approved') %}
-    <a href="/bounty/{{ bounty.bounty_id }}/report" class="btn btn-secondary">View Report</a>
-    <a href="/bounty/{{ bounty.bounty_id }}/submission" class="btn btn-secondary">Submission</a>
+  <div style="display:flex;gap:8px;flex-wrap:wrap;">
+    <a href="/dashboard" class="btn btn-ghost">← Board</a>
+    {% if investigation %}
+    <a href="/bounty/{{ bounty.bounty_id }}/report"     class="btn btn-ghost">Report</a>
+    <a href="/bounty/{{ bounty.bounty_id }}/blockchain" class="btn btn-ghost">Blockchain</a>
+    <a href="/bounty/{{ bounty.bounty_id }}/risk"       class="btn btn-ghost">Risk</a>
+    <a href="/bounty/{{ bounty.bounty_id }}/network"    class="btn btn-ghost">Graph</a>
+    <a href="/bounty/{{ bounty.bounty_id }}/le"         class="btn btn-ghost">LE Package</a>
+    <a href="/bounty/{{ bounty.bounty_id }}/submission" class="btn btn-primary">Submission →</a>
     {% endif %}
   </div>
 </div>
 
-<!-- Bounty Metadata -->
-<div class="card">
-  <div class="card-header">
-    <span class="card-title">Bounty Details</span>
+<!-- Bounty details -->
+<div class="grid-2">
+  <div class="card">
+    <div class="card-header"><span class="card-title">Bounty Details</span></div>
+    <div class="kv-row">
+      <span class="kv-label">Target</span>
+      <span class="kv-value">
+        <a href="{{ bounty.target_url }}" target="_blank"
+           style="color:var(--accent);text-decoration:none;">{{ bounty.target_url }}</a>
+      </span>
+    </div>
+    <div class="kv-row">
+      <span class="kv-label">Bounty ID</span>
+      <span class="kv-value" style="font-size:10px;">{{ bounty.bounty_id }}</span>
+    </div>
+    <div class="kv-row">
+      <span class="kv-label">Sponsor</span>
+      <span class="kv-value">{{ bounty.sponsor or '—' }}</span>
+    </div>
+    <div class="kv-row">
+      <span class="kv-label">Multiplier</span>
+      <span class="kv-value" style="color:var(--warn);">×{{ bounty.multiplier or 1.0 }}</span>
+    </div>
+    <div class="kv-row">
+      <span class="kv-label">Expires</span>
+      <span class="kv-value">{{ bounty.expires_raw or 'No expiry' }}</span>
+    </div>
+    <div class="kv-row">
+      <span class="kv-label">Status</span>
+      <span class="kv-value">
+        <span class="badge badge-{{ bounty.status }}">{{ bounty.status | upper }}</span>
+      </span>
+    </div>
   </div>
-  <div class="intel-grid">
-    <div>
-      <div class="intel-row"><span class="intel-key">Target</span><span class="intel-val highlight">{{ bounty.target_url or bounty.domain }}</span></div>
-      <div class="intel-row"><span class="intel-key">Bounty ID</span><span class="intel-val" style="color: var(--purple)">{{ bounty.bounty_id }}</span></div>
-      <div class="intel-row"><span class="intel-key">Sponsor</span><span class="intel-val">{{ bounty.sponsor or '—' }}</span></div>
+
+  <!-- Intel summary (post-investigation) -->
+  <div class="card">
+    <div class="card-header"><span class="card-title">Intel Summary</span>
+      {% if investigation %}
+      <a href="/bounty/{{ bounty.bounty_id }}/report" style="font-family:var(--mono);font-size:11px;color:var(--accent);text-decoration:none;">Full Report →</a>
+      {% endif %}
     </div>
-    <div>
-      <div class="intel-row"><span class="intel-key">Multiplier</span><span class="intel-val warn">×{{ bounty.multiplier or 1.0 }}</span></div>
-      <div class="intel-row"><span class="intel-key">Max Claims</span><span class="intel-val">{{ bounty.max_claims or 1 }}</span></div>
-      <div class="intel-row"><span class="intel-key">Expires</span><span class="intel-val">{{ bounty.expires_raw or '—' }}</span></div>
+    {% if investigation %}
+    {% set urlscan = investigation.urlscan or {} %}
+    {% set whois   = investigation.whois   or {} %}
+    {% set pdns    = investigation.passive_dns or {} %}
+    {% set bc      = investigation.blockchain or {} %}
+    <div class="kv-row">
+      <span class="kv-label">Primary IP</span>
+      <span class="kv-value">{{ urlscan.get('primary_ip', '—') }}</span>
     </div>
+    <div class="kv-row">
+      <span class="kv-label">ASN / Hosting</span>
+      <span class="kv-value" style="font-size:11px;">{{ urlscan.get('asn_name', '—') }}</span>
+    </div>
+    <div class="kv-row">
+      <span class="kv-label">Country</span>
+      <span class="kv-value">{{ urlscan.get('country', '—') }}</span>
+    </div>
+    <div class="kv-row">
+      <span class="kv-label">Registrar</span>
+      <span class="kv-value" style="font-size:11px;">{{ whois.get('registrar', '—') }}</span>
+    </div>
+    <div class="kv-row">
+      <span class="kv-label">Registered</span>
+      <span class="kv-value">{{ whois.get('creation_date', '—') }}</span>
+    </div>
+    <div class="kv-row">
+      <span class="kv-label">SOA Email</span>
+      <span class="kv-value" style="color:var(--warn);">{{ whois.get('soa_email', '—') }}</span>
+    </div>
+    <div class="kv-row">
+      <span class="kv-label">Linked Domains</span>
+      <span class="kv-value">{{ pdns.get('linked_domains', []) | length }}</span>
+    </div>
+    <div class="kv-row">
+      <span class="kv-label">Wallets Found</span>
+      <span class="kv-value" style="color:{% if wallets %}var(--warn){% else %}var(--muted){% endif %};">
+        {{ wallets | length }}
+      </span>
+    </div>
+    <div class="kv-row">
+      <span class="kv-label">USD Traced</span>
+      <span class="kv-value" style="color:{% if bc.get('total_usd',0) > 0 %}var(--danger){% else %}var(--muted){% endif %};">
+        ${{ "{:,.2f}".format(bc.get('total_usd', 0)) }}
+      </span>
+    </div>
+    <div class="kv-row">
+      <span class="kv-label">Risk Score</span>
+      <span class="kv-value">
+        <span class="risk risk-{{ investigation.risk_level or 'unknown' }}">
+          {{ investigation.risk_level or '—' }} ({{ investigation.risk_score or 0 }}/100)
+        </span>
+      </span>
+    </div>
+    {% else %}
+    <div style="color:var(--muted);font-family:var(--mono);font-size:12px;padding:16px 0;text-align:center;">
+      No investigation data yet.
+    </div>
+    {% endif %}
   </div>
 </div>
 
-<!-- Investigation Trigger / Progress -->
-<div class="card" id="investigation-card">
+<!-- Pipeline -->
+<div class="card" style="margin-bottom:16px;">
   <div class="card-header">
     <span class="card-title">Investigation Pipeline</span>
-    {% if bounty.status == 'pending' %}
-    <button class="btn btn-primary" id="start-btn" onclick="startInvestigation()">
-      ▶ Start Investigation
-    </button>
-    {% elif bounty.status == 'investigating' %}
-    <span class="badge badge-investigating">Running...</span>
-    {% elif bounty.status in ('complete', 'approved') %}
-    <span class="badge badge-complete">Complete</span>
-    {% endif %}
+    <span id="pipeline-status" class="badge badge-{{ bounty.status }}">
+      {{ bounty.status | upper }}
+    </span>
   </div>
 
-  <!-- Pipeline stage indicators -->
-  <div id="pipeline-stages" style="display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px;">
-    {% for stage_id, stage_name in [('urlscan','URLScan'), ('whois','WHOIS'), ('passive_dns','Passive DNS'), ('social_osint','Social OSINT'), ('report','AI Report'), ('takedowns','Takedowns'), ('packaging','Package')] %}
-    <div class="stage-pill" data-stage="{{ stage_id }}"
-         style="padding: 4px 10px; border-radius: 3px; font-family: var(--mono); font-size: 11px;
-                background: var(--bg3); border: 1px solid var(--border); color: var(--muted);">
-      {{ stage_name }}
-    </div>
+  <!-- Stage indicators -->
+  <div style="display:flex;gap:6px;flex-wrap:wrap;margin-bottom:14px;">
+    {% for stage in ['urlscan','whois','passive_dns','social_osint','cert_osint','blockchain','report','risk','takedowns','packaging','graph','done'] %}
+    <span id="stage-{{ stage }}"
+          style="font-family:var(--mono);font-size:10px;padding:3px 10px;border-radius:3px;
+                 background:var(--bg3);border:1px solid var(--border);color:var(--muted);">
+      {{ stage | replace('_',' ') }}
+    </span>
     {% endfor %}
   </div>
 
-  <!-- Live log -->
-  <div class="progress-log" id="progress-log">
-    {% if bounty.status == 'pending' %}
-    <div class="log-entry"><span class="log-ts">--:--:--</span><span class="log-stage">ready</span><span class="log-msg">Awaiting investigation start.</span></div>
-    {% elif bounty.status in ('complete', 'approved') %}
-    <div class="log-entry done"><span class="log-ts">--:--:--</span><span class="log-stage">done</span><span class="log-msg">Investigation complete. See report →</span></div>
+  <!-- Log output -->
+  <div id="log-box" class="log-box" style="{% if not investigation %}display:none;{% endif %}">
+    {% if investigation %}
+    <span class="log-done">Investigation complete. See report →</span>
     {% endif %}
   </div>
+
+  <!-- Run button -->
+  {% if bounty.status in ('pending', 'failed') %}
+  <div style="margin-top:12px;">
+    <button id="run-btn" onclick="startInvestigation()" class="btn btn-primary">
+      ▶ Run Investigation
+    </button>
+  </div>
+  {% endif %}
 </div>
 
-<!-- Quick intel preview (if complete) -->
-{% if investigation %}
-<div class="card">
+<!-- Screenshot -->
+{% if investigation and investigation.urlscan and investigation.urlscan.get('screenshot_url') %}
+<div class="card" style="margin-bottom:16px;">
   <div class="card-header">
-    <span class="card-title">Intel Summary</span>
-    <a href="/bounty/{{ bounty.bounty_id }}/report" class="btn btn-ghost">Full Report →</a>
+    <span class="card-title">Site Screenshot</span>
+    <a href="{{ investigation.urlscan.report_url }}" target="_blank"
+       style="font-family:var(--mono);font-size:11px;color:var(--accent);text-decoration:none;">
+      URLScan Report →
+    </a>
   </div>
-  <div class="intel-grid">
-    <div>
-      {% if investigation.urlscan %}
-      <div class="intel-row"><span class="intel-key">Primary IP</span><span class="intel-val highlight">{{ investigation.urlscan.get('primary_ip', '—') }}</span></div>
-      <div class="intel-row"><span class="intel-key">ASN / Hosting</span><span class="intel-val">{{ investigation.urlscan.get('asn_name', '—') }}</span></div>
-      <div class="intel-row"><span class="intel-key">Country</span><span class="intel-val">{{ investigation.urlscan.get('country', '—') }}</span></div>
-      {% endif %}
-      {% if investigation.whois %}
-      <div class="intel-row"><span class="intel-key">Registrar</span><span class="intel-val">{{ investigation.whois.get('registrar', '—') }}</span></div>
-      <div class="intel-row"><span class="intel-key">Registered</span><span class="intel-val">{{ investigation.whois.get('creation_date', '—') }}</span></div>
-      <div class="intel-row"><span class="intel-key">SOA Email</span><span class="intel-val warn">{{ investigation.whois.get('soa_email', '—') }}</span></div>
-      {% endif %}
-    </div>
-    <div>
-      {% if investigation.similar_domains %}
-      <div class="intel-row">
-        <span class="intel-key">Similar Sites</span>
-        <span class="intel-val highlight">{{ investigation.similar_domains|length }}</span>
-      </div>
-      {% endif %}
-      {% if investigation.passive_dns %}
-      <div class="intel-row">
-        <span class="intel-key">Linked Domains</span>
-        <span class="intel-val highlight">
-          {{ (investigation.passive_dns.get('linked_domains') or [])|length }}
-        </span>
-      </div>
-      {% endif %}
-      {% if investigation.social_osint %}
-      {% set wallets = investigation.social_osint.get('wallets_from_html', {}) %}
-      <div class="intel-row">
-        <span class="intel-key">Wallets Found</span>
-        <span class="intel-val warn">
-          {{ wallets.values() | sum(start=[]) | list | length }}
-        </span>
-      </div>
-      {% endif %}
-    </div>
-  </div>
+  <img src="{{ investigation.urlscan.screenshot_url }}" alt="Site screenshot"
+       style="width:100%;border-radius:4px;border:1px solid var(--border);max-height:400px;object-fit:contain;">
 </div>
+{% endif %}
 
 <!-- Takedown approval -->
-{% if bounty.status == 'complete' %}
+{% if investigation and bounty.status == 'complete' %}
 <div class="card">
   <div class="card-header">
     <span class="card-title">Takedown Approval</span>
   </div>
-  <div style="color: var(--muted); font-family: var(--mono); font-size: 12px; margin-bottom: 16px;">
-    Review the report above, then approve to generate final takedown emails.
-    This action is logged.
+  <p style="font-size:13px;color:var(--muted);margin-bottom:14px;line-height:1.6;">
+    Review the intelligence report, then approve takedowns to generate final emails and mark this bounty as approved.
+  </p>
+  <div style="display:flex;gap:8px;">
+    <a href="/bounty/{{ bounty.bounty_id }}/report" class="btn btn-ghost">Review Report</a>
+    <button onclick="approveTakedown()" class="btn btn-danger">✓ Approve Takedowns</button>
   </div>
-  <button class="btn btn-danger" onclick="approveTakedown()">
-    ⚡ Approve Takedowns
-  </button>
-  <div id="approve-result" style="margin-top: 12px;"></div>
+  <div id="approve-result" style="margin-top:12px;"></div>
 </div>
-{% elif bounty.status == 'approved' %}
-<div class="alert alert-success">
-  Takedowns approved. Submission package ready →
-  <a href="/bounty/{{ bounty.bounty_id }}/submission" style="color: var(--accent);">View Submission</a>
-</div>
-{% endif %}
-
 {% endif %}
 
 <script>
-const bountyId = "{{ bounty.bounty_id }}";
-
 function startInvestigation() {
-  document.getElementById('start-btn').disabled = true;
-  document.getElementById('start-btn').textContent = 'Starting...';
+  const btn = document.getElementById('run-btn');
+  btn.disabled = true;
+  btn.textContent = '⟳ Running...';
 
-  fetch(`/bounty/${bountyId}/investigate`, { method: 'POST' })
+  const log = document.getElementById('log-box');
+  log.style.display = 'block';
+  log.innerHTML = '';
+
+  fetch('/bounty/{{ bounty.bounty_id }}/investigate', { method: 'POST' })
     .then(r => r.json())
     .then(data => {
-      if (data.status === 'started') {
-        listenProgress();
-      } else {
-        addLog('error', 'error', data.error || 'Failed to start');
+      if (data.error) {
+        log.innerHTML = `<span class="log-error">[error] ${data.error}</span>`;
+        btn.disabled = false;
+        btn.textContent = '▶ Run Investigation';
+        return;
       }
+      listenProgress();
     });
 }
 
 function listenProgress() {
-  const es = new EventSource(`/bounty/${bountyId}/progress`);
-  const log = document.getElementById('progress-log');
-  log.innerHTML = '';
+  const log  = document.getElementById('log-box');
+  const es   = new EventSource('/bounty/{{ bounty.bounty_id }}/progress');
 
-  es.onmessage = (e) => {
+  es.onmessage = function(e) {
     const event = JSON.parse(e.data);
-    addLog(event.ts || '', event.stage, event.message);
-    highlightStage(event.stage);
+    const { stage, message, ts } = event;
 
-    if (event.stage === 'done') {
-      es.close();
-      setTimeout(() => window.location.reload(), 1500);
+    // Highlight stage pill
+    const pill = document.getElementById(`stage-${stage}`);
+    if (pill) {
+      pill.style.background = 'rgba(0,212,170,0.15)';
+      pill.style.color = 'var(--accent)';
+      pill.style.borderColor = 'rgba(0,212,170,0.4)';
     }
-    if (event.stage === 'error') {
+
+    // Append log line
+    const line = document.createElement('div');
+    line.innerHTML = `<span class="log-ts">${ts || ''}</span><span class="log-stage">[${stage}]</span> <span class="log-${stage === 'done' ? 'done' : stage === 'error' ? 'error' : 'message'}">${message}</span>`;
+    log.appendChild(line);
+    log.scrollTop = log.scrollHeight;
+
+    if (stage === 'done') {
+      es.close();
+      document.getElementById('pipeline-status').textContent = 'COMPLETE';
+      document.getElementById('pipeline-status').className = 'badge badge-complete';
+      setTimeout(() => location.reload(), 1500);
+    }
+
+    if (stage === 'error') {
       es.close();
     }
   };
-
-  es.onerror = () => {
-    addLog('', 'error', 'Connection lost');
-    es.close();
-  };
-}
-
-function addLog(ts, stage, msg) {
-  const log = document.getElementById('progress-log');
-  const entry = document.createElement('div');
-  entry.className = `log-entry ${stage}`;
-  entry.innerHTML = `<span class="log-ts">${ts}</span><span class="log-stage">${stage}</span><span class="log-msg">${msg}</span>`;
-  log.appendChild(entry);
-  log.scrollTop = log.scrollHeight;
-}
-
-function highlightStage(stage) {
-  const pill = document.querySelector(`.stage-pill[data-stage="${stage}"]`);
-  if (pill) {
-    document.querySelectorAll('.stage-pill').forEach(p => {
-      if (p.style.color === 'var(--accent)') {
-        p.style.color = 'var(--muted)';
-        p.style.borderColor = 'var(--border)';
-      }
-    });
-    pill.style.color = 'var(--accent)';
-    pill.style.borderColor = 'var(--accent)';
-  }
 }
 
 function approveTakedown() {
-  if (!confirm('Approve takedown requests for {{ bounty.domain }}?')) return;
-  fetch(`/bounty/${bountyId}/approve`, { method: 'POST' })
+  if (!confirm('Approve takedowns for {{ bounty.domain }}? This will mark the bounty as approved.')) return;
+  fetch('/bounty/{{ bounty.bounty_id }}/approve', { method: 'POST' })
     .then(r => r.json())
     .then(data => {
       document.getElementById('approve-result').innerHTML =
-        '<div class="alert alert-success">Approved. Redirecting to submission package...</div>';
-      setTimeout(() => window.location.reload(), 1500);
+        '<div class="alert alert-ok">✓ Approved. Bounty marked complete.</div>';
+      setTimeout(() => location.reload(), 1500);
     });
 }
-
-// If investigating on load, start listening
-{% if bounty.status == 'investigating' %}
-listenProgress();
-{% endif %}
 </script>
 {% endblock %}

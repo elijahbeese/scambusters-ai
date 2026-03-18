@@ -5,9 +5,9 @@
 <div class="page-header">
   <div>
     <h1>New Bounty</h1>
-    <div class="page-subtitle">Paste the Discord bounty message below</div>
+    <div class="page-subtitle">Paste a Discord bounty message to begin investigation</div>
   </div>
-  <a href="/" class="btn btn-ghost">← Back</a>
+  <a href="/dashboard" class="btn btn-ghost">← Board</a>
 </div>
 
 {% if error %}
@@ -16,45 +16,57 @@
 
 <div class="card">
   <div class="card-header">
-    <span class="card-title">Paste Discord Message</span>
+    <span class="card-title">Paste Bounty Message</span>
   </div>
 
   <form method="POST" action="/intake">
-    <div class="form-group">
-      <label>Raw Discord Bounty Text</label>
-      <textarea name="raw_paste" rows="10" placeholder="🎯 New Bounty: example.com Information Intelligence For Good daily bounty.
-Get it before it expires!
-Sponsor Intelligence For Good
-Multiplier ×1.25
-Max Claims 1
-Expires in 17 hours • March 18, 2026 at 8:00 PM
-Target https://example.com/
-Bounty ID: 20260317_7e70bc8d882b4ac9a48307e4dd0ee75b">{{ raw or '' }}</textarea>
-    </div>
+    <textarea name="raw_paste" rows="14" placeholder="Paste the full Discord bounty message here...
 
-    <div style="display: flex; gap: 10px; align-items: center;">
-      <button type="submit" class="btn btn-primary">Parse & Queue</button>
-      <span style="font-family: var(--mono); font-size: 11px; color: var(--muted)">
-        Agent will extract: domain, bounty ID, sponsor, multiplier, expiry
+Example:
+🎯 New Bounty | scam-domain.com
+💰 Sponsor: Intelligence For Good
+📊 Multiplier: ×1.25
+🔗 https://scam-domain.com
+..." style="width:100%;background:var(--bg3);border:1px solid var(--border);
+            border-radius:4px;padding:12px;font-family:var(--mono);font-size:12px;
+            color:var(--text);resize:vertical;outline:none;line-height:1.6;">{% if raw %}{{ raw }}{% endif %}</textarea>
+
+    <div style="margin-top:12px;display:flex;align-items:center;gap:10px;">
+      <button type="submit" class="btn btn-primary">Parse + Queue Investigation →</button>
+      <span style="font-family:var(--mono);font-size:11px;color:var(--muted);">
+        The agent will extract domain, sponsor, multiplier, and expiry automatically.
       </span>
     </div>
   </form>
 </div>
 
-<!-- Expected format reference -->
-<div class="card">
+<!-- Manual entry fallback -->
+<div class="card" style="margin-top:16px;">
   <div class="card-header">
-    <span class="card-title">Expected Format</span>
+    <span class="card-title">Or Enter Domain Manually</span>
   </div>
-  <pre style="color: var(--muted)">🎯 New Bounty: <span style="color: var(--accent)">edx50.com</span> Information Intelligence For Good daily bounty.
-Sponsor <span style="color: var(--text)">Intelligence For Good</span>
-Multiplier <span style="color: var(--warn)">×1.25</span>
-Max Claims <span style="color: var(--text)">1</span>
-Expires in 17 hours • <span style="color: var(--text)">March 18, 2026 at 8:00 PM</span>
-Target <span style="color: var(--accent2)">https://edx50.com/</span>
-Bounty ID: <span style="color: var(--purple)">20260317_7e70bc8d882b4ac9a48307e4dd0ee75b</span></pre>
-  <div style="margin-top: 12px; font-family: var(--mono); font-size: 11px; color: var(--muted);">
-    The parser handles variations in formatting. At minimum it needs a target URL or domain.
-  </div>
+  <form method="POST" action="/intake">
+    <div style="display:flex;gap:8px;align-items:center;">
+      <input type="hidden" name="raw_paste" id="manual-raw">
+      <input type="text" id="manual-domain" placeholder="example-scam.com"
+             style="flex:1;background:var(--bg3);border:1px solid var(--border);
+                    border-radius:4px;padding:8px 12px;font-family:var(--mono);
+                    font-size:13px;color:var(--text);outline:none;">
+      <button type="button" onclick="submitManual()" class="btn btn-primary">
+        Investigate →
+      </button>
+    </div>
+  </form>
 </div>
+
+<script>
+function submitManual() {
+  const domain = document.getElementById('manual-domain').value.trim()
+    .replace(/^https?:\/\//, '').replace(/\/.*$/, '');
+  if (!domain) return alert('Enter a domain.');
+  document.getElementById('manual-raw').value =
+    `Manual entry\nDomain: ${domain}\nTarget: https://${domain}\nSponsor: manual`;
+  document.getElementById('manual-raw').closest('form').submit();
+}
+</script>
 {% endblock %}

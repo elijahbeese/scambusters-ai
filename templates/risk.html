@@ -1,0 +1,149 @@
+{% extends "base.html" %}
+{% block title %}Risk Score — {{ bounty.domain }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Risk Assessment</h1>
+    <div class="page-subtitle">{{ bounty.domain }} · {{ bounty.bounty_id }}</div>
+  </div>
+  <div style="display:flex;gap:8px;">
+    <a href="/bounty/{{ bounty.bounty_id }}" class="btn btn-ghost">← Bounty</a>
+    <a href="/bounty/{{ bounty.bounty_id }}/report" class="btn btn-ghost">Full Report</a>
+  </div>
+</div>
+
+{% if not investigation %}
+<div class="alert alert-warn">No investigation data. Run the pipeline first.</div>
+{% else %}
+
+{% set score = investigation.risk_score or 0 %}
+{% set level = investigation.risk_level or 'unknown' %}
+{% set breakdown = investigation.risk_breakdown or {} %}
+
+<!-- Score hero -->
+<div class="card" style="margin-bottom:16px;text-align:center;padding:40px;">
+  <div style="font-family:var(--mono);font-size:72px;font-weight:600;line-height:1;
+              color:{% if level == 'CRITICAL' %}var(--danger){% elif level == 'HIGH' %}var(--warn){% elif level == 'MEDIUM' %}#88cc44{% elif level == 'LOW' %}var(--blue){% else %}var(--muted){% endif %};">
+    {{ score }}
+  </div>
+  <div style="font-family:var(--mono);font-size:13px;color:var(--muted);margin-top:8px;">/ 100</div>
+  <div style="margin-top:12px;">
+    <span class="risk risk-{{ level }}" style="font-size:14px;padding:4px 16px;">{{ level }}</span>
+  </div>
+</div>
+
+<!-- Score breakdown bars -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Score Breakdown</span>
+  </div>
+
+  {% set categories = [
+    ('blockchain',     'Blockchain / Financial',  'var(--warn)',   40),
+    ('infrastructure', 'Infrastructure / Clones', 'var(--blue)',   20),
+    ('social',         'Social Media Presence',   'var(--purple)', 15),
+    ('domain',         'Domain Registration',     'var(--accent)', 15),
+    ('virustotal',     'VirusTotal Detections',   'var(--danger)', 10),
+  ] %}
+
+  {% for key, label, color, max_pts in categories %}
+  {% set cat = breakdown.get(key, {}) %}
+  {% set cat_score = cat.get('score', 0) %}
+  {% set pct = (cat_score / max_pts * 100) | int if max_pts > 0 else 0 %}
+
+  <div style="margin-bottom:20px;">
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;">
+      <span style="font-family:var(--mono);font-size:12px;color:var(--text);">{{ label }}</span>
+      <span style="font-family:var(--mono);font-size:12px;color:{{ color }};">
+        {{ cat_score }} / {{ max_pts }}
+      </span>
+    </div>
+    <div style="background:var(--bg3);border-radius:3px;height:8px;overflow:hidden;">
+      <div style="background:{{ color }};width:{{ pct }}%;height:100%;border-radius:3px;
+                  transition:width 0.5s ease;"></div>
+    </div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:4px;">
+      {{ cat.get('note', '—') }}
+    </div>
+  </div>
+  {% endfor %}
+</div>
+
+<!-- Factor detail -->
+<div class="grid-2" style="margin-top:16px;">
+
+  <div class="card">
+    <div class="card-header"><span class="card-title">Blockchain</span></div>
+    {% set bc = breakdown.get('blockchain', {}) %}
+    <div class="kv-row">
+      <span class="kv-label">Total USD Traced</span>
+      <span class="kv-value" style="color:var(--warn);">
+        ${{ "{:,.2f}".format(bc.get('total_usd', 0)) }}
+      </span>
+    </div>
+    <div class="kv-row">
+      <span class="kv-label">Score Contribution</span>
+      <span class="kv-value">{{ bc.get('score', 0) }} / 40</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><span class="card-title">Infrastructure</span></div>
+    {% set infra = breakdown.get('infrastructure', {}) %}
+    <div class="kv-row">
+      <span class="kv-label">Clone Sites</span>
+      <span class="kv-value">{{ infra.get('clone_count', 0) }}</span>
+    </div>
+    <div class="kv-row">
+      <span class="kv-label">SOA Cluster</span>
+      <span class="kv-value">{{ infra.get('soa_cluster', 0) }} domains</span>
+    </div>
+    <div class="kv-row">
+      <span class="kv-label">Score Contribution</span>
+      <span class="kv-value">{{ infra.get('score', 0) }} / 20</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><span class="card-title">Social Media</span></div>
+    {% set soc = breakdown.get('social', {}) %}
+    <div class="kv-row">
+      <span class="kv-label">Telegram Channels</span>
+      <span class="kv-value">{{ soc.get('telegram', 0) }}</span>
+    </div>
+    <div class="kv-row">
+      <span class="kv-label">WhatsApp Groups</span>
+      <span class="kv-value">{{ soc.get('whatsapp', 0) }}</span>
+    </div>
+    <div class="kv-row">
+      <span class="kv-label">Score Contribution</span>
+      <span class="kv-value">{{ soc.get('score', 0) }} / 15</span>
+    </div>
+  </div>
+
+  <div class="card">
+    <div class="card-header"><span class="card-title">Domain + VirusTotal</span></div>
+    {% set dom = breakdown.get('domain', {}) %}
+    {% set vt  = breakdown.get('virustotal', {}) %}
+    <div class="kv-row">
+      <span class="kv-label">Registrar</span>
+      <span class="kv-value" style="font-size:11px;">{{ dom.get('registrar', '—') }}</span>
+    </div>
+    <div class="kv-row">
+      <span class="kv-label">SOA Email</span>
+      <span class="kv-value" style="color:var(--accent);">{{ dom.get('soa_email', '—') }}</span>
+    </div>
+    <div class="kv-row">
+      <span class="kv-label">VT Malicious</span>
+      <span class="kv-value" style="color:var(--danger);">{{ vt.get('malicious', 0) }}</span>
+    </div>
+    <div class="kv-row">
+      <span class="kv-label">VT Suspicious</span>
+      <span class="kv-value" style="color:var(--warn);">{{ vt.get('suspicious', 0) }}</span>
+    </div>
+  </div>
+
+</div>
+{% endif %}
+{% endblock %}

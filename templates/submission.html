@@ -1,66 +1,102 @@
 {% extends "base.html" %}
-{% block title %}Submission: {{ bounty.domain }} — ScamBusters{% endblock %}
+{% block title %}Submission — {{ bounty.domain }}{% endblock %}
 
 {% block content %}
 <div class="page-header">
   <div>
-    <h1>Submission Package</h1>
-    <div class="page-subtitle">{{ bounty.domain }} · Ready for sam@intelligenceForGood.org</div>
+    <h1>I4G Submission Package</h1>
+    <div class="page-subtitle">{{ bounty.domain }} · Ready to submit to sam@intelligenceforgood.org</div>
   </div>
-  <div style="display:flex; gap: 8px;">
-    <a href="/bounty/{{ bounty.bounty_id }}/report" class="btn btn-ghost">← Report</a>
+  <div style="display:flex;gap:8px;">
+    <a href="/bounty/{{ bounty.bounty_id }}" class="btn btn-ghost">← Bounty</a>
+    <a href="/bounty/{{ bounty.bounty_id }}/le" class="btn btn-ghost">LE Package</a>
+    <button onclick="copyEmail()" class="btn btn-primary">Copy Email</button>
   </div>
 </div>
 
 {% if not package %}
-<div class="alert alert-warn">No submission package available. Complete the investigation first.</div>
+<div class="alert alert-warn">Submission package not generated yet. Complete the investigation pipeline first.</div>
 {% else %}
 
-<!-- Submission Stats -->
-<div class="stats-grid">
-  <div class="stat-card">
-    <div class="stat-value highlight">{{ package.get('linked_domain_count', 0) }}</div>
-    <div class="stat-label">Linked Domains</div>
+<div class="card" style="margin-bottom:16px;">
+  <div class="card-header">
+    <span class="card-title">Email to Sam Mabry — Intelligence For Good</span>
+    <span style="font-family:var(--mono);font-size:11px;color:var(--accent);">
+      sam@intelligenceforgood.org
+    </span>
   </div>
-  <div class="stat-card">
-    <div class="stat-value" style="color: var(--warn);">{{ package.get('wallet_count', 0) }}</div>
-    <div class="stat-label">Wallet Addresses</div>
+  <pre id="email-body" style="font-family:var(--mono);font-size:12px;line-height:1.7;
+       color:var(--text);white-space:pre-wrap;word-break:break-word;
+       background:var(--bg3);border:1px solid var(--border);border-radius:4px;
+       padding:16px;max-height:600px;overflow-y:auto;">{{ email_body }}</pre>
+</div>
+
+<!-- Package summary -->
+<div class="grid-2">
+  <div class="card">
+    <div class="card-header"><span class="card-title">Submission Summary</span></div>
+    <div class="kv-row"><span class="kv-label">Domain</span>
+      <span class="kv-value" style="color:var(--accent);">{{ package.get('target', {}).get('domain', '—') }}</span></div>
+    <div class="kv-row"><span class="kv-label">Bounty ID</span>
+      <span class="kv-value" style="font-size:10px;">{{ package.get('submission_metadata', {}).get('bounty_id', '—') }}</span></div>
+    <div class="kv-row"><span class="kv-label">IP Address</span>
+      <span class="kv-value">{{ package.get('target', {}).get('primary_ip', '—') }}</span></div>
+    <div class="kv-row"><span class="kv-label">Hosting</span>
+      <span class="kv-value" style="font-size:11px;">{{ package.get('target', {}).get('asn', '—') }}</span></div>
+    <div class="kv-row"><span class="kv-label">Wallets</span>
+      <span class="kv-value" style="color:var(--warn);">{{ package.get('wallet_count', 0) }}</span></div>
+    <div class="kv-row"><span class="kv-label">Linked Domains</span>
+      <span class="kv-value">{{ package.get('linked_domain_count', 0) }}</span></div>
   </div>
-  <div class="stat-card">
-    <div class="stat-value" style="color: var(--purple);">
-      {{ package.get('social_channels', {}).values() | sum(start=[]) | list | length }}
+
+  <div class="card">
+    <div class="card-header"><span class="card-title">Submit Checklist</span></div>
+    {% set checks = [
+      ('Investigation complete', true),
+      ('AI report generated', true),
+      ('Takedown emails drafted', true),
+      ('LE package ready', true),
+      ('[YOUR NAME] filled in', false),
+      ('Sent to sam@intelligenceforgood.org', false),
+    ] %}
+    {% for label, done in checks %}
+    <div style="display:flex;align-items:center;gap:10px;padding:7px 0;
+                border-bottom:1px solid var(--border);font-family:var(--mono);font-size:12px;">
+      <span style="color:{% if done %}var(--accent){% else %}var(--warn){% endif %};">
+        {{ '✓' if done else '○' }}
+      </span>
+      <span style="color:{% if done %}var(--text){% else %}var(--muted){% endif %};">{{ label }}</span>
     </div>
-    <div class="stat-label">Social Channels</div>
+    {% endfor %}
   </div>
 </div>
 
-<!-- Email Body -->
+<!-- URLScan screenshot if available -->
+{% set target = package.get('target', {}) %}
+{% if target.get('screenshot') %}
 <div class="card">
   <div class="card-header">
-    <span class="card-title">Email to sam@intelligenceForGood.org</span>
-    <button class="btn btn-primary" onclick="copyEmail()">Copy Email</button>
+    <span class="card-title">Site Screenshot</span>
+    {% if target.get('urlscan_report') %}
+    <a href="{{ target.urlscan_report }}" target="_blank"
+       style="font-family:var(--mono);font-size:11px;color:var(--accent);text-decoration:none;">
+      URLScan →
+    </a>
+    {% endif %}
   </div>
-  <pre id="email-body">{{ email_body }}</pre>
+  <img src="{{ target.screenshot }}" alt="Scam site screenshot"
+       style="width:100%;border-radius:4px;border:1px solid var(--border);max-height:400px;object-fit:contain;">
 </div>
+{% endif %}
 
-<!-- Raw JSON Package -->
-<div class="card">
-  <div class="card-header">
-    <span class="card-title">Raw JSON Package</span>
-    <button class="btn btn-secondary" onclick="copyJSON()">Copy JSON</button>
-  </div>
-  <pre id="json-body">{{ package | tojson(indent=2) }}</pre>
-</div>
+{% endif %}
 
 <script>
 function copyEmail() {
-  navigator.clipboard.writeText(document.getElementById('email-body').textContent)
-    .then(() => alert('Email copied to clipboard'));
-}
-function copyJSON() {
-  navigator.clipboard.writeText(document.getElementById('json-body').textContent)
-    .then(() => alert('JSON copied to clipboard'));
+  const text = document.getElementById('email-body').innerText;
+  navigator.clipboard.writeText(text).then(() => {
+    alert('Email copied to clipboard. Open your mail client, address to sam@intelligenceforgood.org, paste, and send.');
+  });
 }
 </script>
-{% endif %}
 {% endblock %}

@@ -1,260 +1,249 @@
 {% extends "base.html" %}
-{% block title %}Report: {{ bounty.domain }} — ScamBusters{% endblock %}
+{% block title %}Report — {{ bounty.domain }}{% endblock %}
 
 {% block content %}
 <div class="page-header">
   <div>
     <h1>Intelligence Report</h1>
-    <div class="page-subtitle">{{ bounty.domain }} · {{ bounty.bounty_id }}</div>
+    <div class="page-subtitle">{{ bounty.domain }} ·
+      {% if investigation %}
+      <span class="risk risk-{{ investigation.risk_level or 'unknown' }}">
+        {{ investigation.risk_level or '—' }} ({{ investigation.risk_score or 0 }}/100)
+      </span>
+      {% endif %}
+    </div>
   </div>
-  <div style="display: flex; gap: 8px;">
+  <div style="display:flex;gap:8px;flex-wrap:wrap;">
     <a href="/bounty/{{ bounty.bounty_id }}" class="btn btn-ghost">← Bounty</a>
-    <a href="/bounty/{{ bounty.bounty_id }}/submission" class="btn btn-secondary">Submission Package</a>
+    <a href="/bounty/{{ bounty.bounty_id }}/blockchain" class="btn btn-ghost">Blockchain</a>
+    <a href="/bounty/{{ bounty.bounty_id }}/risk"       class="btn btn-ghost">Risk</a>
+    <a href="/bounty/{{ bounty.bounty_id }}/le"         class="btn btn-ghost">LE Package</a>
+    <a href="/bounty/{{ bounty.bounty_id }}/submission" class="btn btn-primary">Submit →</a>
   </div>
 </div>
 
 {% if not investigation %}
-<div class="alert alert-warn">No investigation data found. Run the pipeline first.</div>
+<div class="alert alert-warn">No investigation data yet. Run the pipeline first.</div>
 {% else %}
 
-<!-- Infrastructure -->
-<div class="card">
-  <div class="card-header">
-    <span class="card-title">Infrastructure</span>
-    {% if investigation.urlscan and investigation.urlscan.get('report_url') %}
-    <a href="{{ investigation.urlscan.report_url }}" target="_blank" class="btn btn-ghost">URLScan →</a>
-    {% endif %}
-  </div>
-  <div class="intel-grid">
-    <div>
-      {% if investigation.urlscan %}
-      <div class="intel-row"><span class="intel-key">Primary IP</span><span class="intel-val highlight">{{ investigation.urlscan.get('primary_ip', '—') }}</span></div>
-      <div class="intel-row"><span class="intel-key">ASN</span><span class="intel-val">{{ investigation.urlscan.get('asn_number', '—') }}</span></div>
-      <div class="intel-row"><span class="intel-key">Hosting Provider</span><span class="intel-val">{{ investigation.urlscan.get('asn_name', '—') }}</span></div>
-      <div class="intel-row"><span class="intel-key">Country</span><span class="intel-val">{{ investigation.urlscan.get('country', '—') }}</span></div>
-      <div class="intel-row"><span class="intel-key">Server</span><span class="intel-val">{{ investigation.urlscan.get('server', '—') }}</span></div>
-      <div class="intel-row"><span class="intel-key">Malicious Score</span>
-        <span class="intel-val {% if investigation.urlscan.get('malicious_score', 0) > 50 %}danger{% endif %}">
-          {{ investigation.urlscan.get('malicious_score', 0) }}
-        </span>
-      </div>
-      {% endif %}
-    </div>
-    <div>
-      {% if investigation.whois %}
-      <div class="intel-row"><span class="intel-key">Registrar</span><span class="intel-val">{{ investigation.whois.get('registrar', '—') }}</span></div>
-      <div class="intel-row"><span class="intel-key">Created</span><span class="intel-val">{{ investigation.whois.get('creation_date', '—') }}</span></div>
-      <div class="intel-row"><span class="intel-key">Expires</span><span class="intel-val">{{ investigation.whois.get('expiration_date', '—') }}</span></div>
-      <div class="intel-row"><span class="intel-key">Abuse Email</span><span class="intel-val highlight">{{ investigation.whois.get('registrar_abuse_email', '—') }}</span></div>
-      <div class="intel-row"><span class="intel-key">SOA Email</span>
-        <span class="intel-val warn">{{ investigation.whois.get('soa_email', '—') }}</span>
-      </div>
-      <div class="intel-row"><span class="intel-key">Org</span><span class="intel-val">{{ investigation.whois.get('org', '—') }}</span></div>
-      {% endif %}
-    </div>
-  </div>
+{% set urlscan = investigation.urlscan or {} %}
+{% set whois   = investigation.whois   or {} %}
+{% set pdns    = investigation.passive_dns or {} %}
+{% set social  = investigation.social_osint or {} %}
+{% set cert    = investigation.cert_osint or {} %}
+{% set vt      = investigation.virustotal or {} %}
+{% set shodan  = investigation.shodan or {} %}
+{% set bc      = investigation.blockchain or {} %}
 
-  <!-- Screenshot -->
-  {% if investigation.urlscan and investigation.urlscan.get('screenshot_url') %}
-  <div style="margin-top: 16px;">
-    <div style="font-family: var(--mono); font-size: 11px; color: var(--muted); margin-bottom: 8px; text-transform: uppercase; letter-spacing: 0.08em;">Screenshot</div>
-    <img src="{{ investigation.urlscan.screenshot_url }}"
-         style="max-width: 100%; border: 1px solid var(--border); border-radius: 4px;"
-         onerror="this.style.display='none'">
-  </div>
-  {% endif %}
-</div>
+<div class="grid-2">
 
-<!-- Crypto Wallets -->
-{% if investigation.social_osint and investigation.social_osint.get('wallets_from_html') %}
-<div class="card">
-  <div class="card-header">
-    <span class="card-title">Crypto Wallet Addresses</span>
-    <span style="font-family: var(--mono); font-size: 11px; color: var(--warn);">
-      {{ investigation.social_osint.wallets_from_html.values() | sum(start=[]) | list | length }} addresses
-    </span>
-  </div>
-  <div class="wallet-list">
-    {% for currency, addresses in investigation.social_osint.wallets_from_html.items() %}
-      {% for addr in addresses %}
-      <div class="wallet-entry">
-        <span class="wallet-currency">{{ currency }}</span>
-        <span class="wallet-addr">{{ addr }}</span>
-      </div>
-      {% endfor %}
-    {% endfor %}
-  </div>
-</div>
-{% endif %}
-
-<!-- Linked & Similar Domains -->
-<div class="card">
-  <div class="card-header">
-    <span class="card-title">Linked & Similar Domains</span>
-  </div>
-
-  {% if investigation.similar_domains %}
-  <h2>URLScan Similar Sites ({{ investigation.similar_domains|length }})</h2>
-  <table style="margin-bottom: 20px;">
-    <thead>
-      <tr><th>Domain</th><th>IP</th><th>ASN</th><th>Country</th></tr>
-    </thead>
-    <tbody>
-      {% for s in investigation.similar_domains[:20] %}
-      <tr>
-        <td class="mono" style="color: var(--accent2)">{{ s.get('domain', '—') }}</td>
-        <td class="mono">{{ s.get('ip', '—') }}</td>
-        <td class="mono" style="color: var(--muted)">{{ s.get('asn', '—') }}</td>
-        <td class="mono" style="color: var(--muted)">{{ s.get('country', '—') }}</td>
-      </tr>
-      {% endfor %}
-    </tbody>
-  </table>
-  {% endif %}
-
-  {% if investigation.passive_dns %}
-  {% set pdns = investigation.passive_dns %}
-  {% if pdns.get('linked_domains') %}
-  <h2>Passive DNS Linked Domains ({{ pdns.linked_domains|length }})</h2>
-  <div class="domain-pills" style="margin-bottom: 16px;">
-    {% for d in pdns.linked_domains[:30] %}
-    <span class="domain-pill">{{ d }}</span>
-    {% endfor %}
-    {% if pdns.linked_domains|length > 30 %}
-    <span class="domain-pill" style="color: var(--muted)">+{{ pdns.linked_domains|length - 30 }} more</span>
-    {% endif %}
-  </div>
-  {% endif %}
-
-  {% if pdns.get('soa_cluster_domains') %}
-  <h2>SOA Email Cluster ({{ pdns.soa_cluster_domains|length }} domains — same operator)</h2>
-  <div style="font-family: var(--mono); font-size: 11px; color: var(--warn); margin-bottom: 8px;">
-    SOA: {{ investigation.whois.get('soa_email', 'unknown') }}
-  </div>
-  <div class="domain-pills">
-    {% for d in pdns.soa_cluster_domains[:30] %}
-    <span class="domain-pill" style="color: var(--warn);">{{ d }}</span>
-    {% endfor %}
-    {% if pdns.soa_cluster_domains|length > 30 %}
-    <span class="domain-pill" style="color: var(--muted)">+{{ pdns.soa_cluster_domains|length - 30 }} more</span>
-    {% endif %}
-  </div>
-  {% endif %}
-
-  {% if pdns.get('historical_ips') %}
-  <div style="margin-top: 16px;">
-    <h2>Historical IPs</h2>
-    <div class="domain-pills">
-      {% for ip in pdns.historical_ips %}
-      <span class="domain-pill" style="color: var(--accent);">{{ ip }}</span>
-      {% endfor %}
-    </div>
-  </div>
-  {% endif %}
-  {% endif %}
-</div>
-
-<!-- Social Media -->
-{% if investigation.social_osint %}
-{% set social = investigation.social_osint %}
-<div class="card">
-  <div class="card-header">
-    <span class="card-title">Social Media & Promo Channels</span>
-  </div>
-
-  {% set has_social = false %}
-  {% for platform, links in social.get('social_links', {}).items() %}
-    {% if links %}{% set has_social = true %}
-    <div style="margin-bottom: 12px;">
-      <div style="font-family: var(--mono); font-size: 11px; color: var(--muted); text-transform: uppercase; margin-bottom: 6px;">{{ platform }}</div>
-      {% for link in links %}
-      <div style="padding: 4px 0;">
-        <a href="{{ link }}" target="_blank" class="mono" style="color: var(--accent2); text-decoration: none;">{{ link }}</a>
-      </div>
-      {% endfor %}
-    </div>
-    {% endif %}
-  {% endfor %}
-  {% if not has_social %}
-  <div style="color: var(--muted); font-family: var(--mono); font-size: 12px;">No social channels found on public pages.</div>
-  {% endif %}
-
-  {% if social.get('contact_info', {}).get('emails') %}
-  <div style="margin-top: 16px;">
-    <div style="font-family: var(--mono); font-size: 11px; color: var(--muted); text-transform: uppercase; margin-bottom: 6px;">Contact Emails</div>
-    {% for email in social.contact_info.emails %}
-    <div class="mono" style="color: var(--text); padding: 2px 0;">{{ email }}</div>
-    {% endfor %}
-  </div>
-  {% endif %}
-
-  <!-- Google Dorks -->
-  {% if social.get('google_dorks') %}
-  <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
-    <div style="font-family: var(--mono); font-size: 11px; color: var(--muted); text-transform: uppercase; margin-bottom: 8px;">Google Dork Queries</div>
-    {% for key, url in social.google_dorks.items() %}
-    {% if url.startswith('http') %}
-    <div style="padding: 3px 0;">
-      <a href="{{ url }}" target="_blank" class="mono" style="color: var(--muted); font-size: 11px; text-decoration: none;">
-        {{ key }}: <span style="color: var(--accent2)">{{ url[:80] }}...</span>
+  <!-- Infrastructure -->
+  <div class="card">
+    <div class="card-header"><span class="card-title">Infrastructure</span>
+      {% if urlscan.get('report_url') %}
+      <a href="{{ urlscan.report_url }}" target="_blank"
+         style="font-family:var(--mono);font-size:11px;color:var(--accent);text-decoration:none;">
+        URLScan →
       </a>
+      {% endif %}
+    </div>
+    <div class="kv-row"><span class="kv-label">Primary IP</span>
+      <span class="kv-value">{{ urlscan.get('primary_ip', '—') }}</span></div>
+    <div class="kv-row"><span class="kv-label">ASN</span>
+      <span class="kv-value" style="font-size:11px;">{{ urlscan.get('asn_name', '—') }}</span></div>
+    <div class="kv-row"><span class="kv-label">Country</span>
+      <span class="kv-value">{{ urlscan.get('country', '—') }}</span></div>
+    <div class="kv-row"><span class="kv-label">Server</span>
+      <span class="kv-value">{{ urlscan.get('server', '—') }}</span></div>
+    <div class="kv-row"><span class="kv-label">Clone Sites</span>
+      <span class="kv-value">{{ urlscan.get('similar_count', 0) }}</span></div>
+    {% if shodan.get('open_ports') %}
+    <div class="kv-row"><span class="kv-label">Open Ports</span>
+      <span class="kv-value">{{ shodan.open_ports | join(', ') }}</span></div>
+    {% endif %}
+    {% if shodan.get('suspicious_ports') %}
+    <div style="margin-top:8px;padding:8px;background:rgba(255,59,92,0.07);
+                border:1px solid rgba(255,59,92,0.2);border-radius:4px;">
+      {% for p in shodan.suspicious_ports %}
+      <div style="font-family:var(--mono);font-size:11px;color:var(--danger);">⚠ {{ p }}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+  <!-- Registration -->
+  <div class="card">
+    <div class="card-header"><span class="card-title">Registration</span></div>
+    <div class="kv-row"><span class="kv-label">Registrar</span>
+      <span class="kv-value" style="font-size:11px;">{{ whois.get('registrar', '—') }}</span></div>
+    <div class="kv-row"><span class="kv-label">Created</span>
+      <span class="kv-value">{{ whois.get('creation_date', '—') }}</span></div>
+    <div class="kv-row"><span class="kv-label">Expires</span>
+      <span class="kv-value">{{ whois.get('expiration_date', '—') }}</span></div>
+    <div class="kv-row"><span class="kv-label">Abuse Email</span>
+      <span class="kv-value" style="color:var(--accent);">{{ whois.get('registrar_abuse_email', '—') }}</span></div>
+    <div class="kv-row"><span class="kv-label">SOA Email</span>
+      <span class="kv-value" style="color:var(--warn);">{{ whois.get('soa_email', '—') }}</span></div>
+    <div class="kv-row"><span class="kv-label">Country</span>
+      <span class="kv-value">{{ whois.get('registrant_country', '—') }}</span></div>
+  </div>
+
+  <!-- Social + Wallets -->
+  <div class="card">
+    <div class="card-header"><span class="card-title">Social OSINT</span></div>
+    {% set social_links = social.get('social_links', {}) %}
+    {% for platform, links in social_links.items() %}
+    {% if links %}
+    <div style="margin-bottom:8px;">
+      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);
+                  text-transform:uppercase;margin-bottom:4px;">{{ platform }}</div>
+      {% for link in links %}
+      <div>
+        <a href="{{ link }}" target="_blank"
+           style="font-family:var(--mono);font-size:12px;color:var(--accent);
+                  text-decoration:none;word-break:break-all;">{{ link }}</a>
+      </div>
+      {% endfor %}
     </div>
     {% endif %}
     {% endfor %}
+    {% set emails = social.get('contact_info', {}).get('emails', []) %}
+    {% if emails %}
+    <div style="margin-top:8px;">
+      <div style="font-family:var(--mono);font-size:10px;color:var(--muted);
+                  text-transform:uppercase;margin-bottom:4px;">Contact Emails</div>
+      {% for email in emails %}
+      <div style="font-family:var(--mono);font-size:12px;color:var(--warn);">{{ email }}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
+    {% if not social_links or not social_links.values() | select | list %}
+    <div style="color:var(--muted);font-family:var(--mono);font-size:12px;">No social links found.</div>
+    {% endif %}
   </div>
-  {% endif %}
+
+  <!-- Passive DNS -->
+  <div class="card">
+    <div class="card-header"><span class="card-title">Passive DNS</span>
+      <span style="font-family:var(--mono);font-size:11px;color:var(--muted);">
+        via {{ pdns.get('source', 'CIRCL') }}
+      </span>
+    </div>
+    {% set linked = pdns.get('linked_domains', []) %}
+    {% set cluster = pdns.get('soa_cluster_domains', []) %}
+    {% set pivots = pdns.get('ip_pivot_domains', []) %}
+    <div class="kv-row"><span class="kv-label">Linked Domains</span>
+      <span class="kv-value">{{ linked | length }}</span></div>
+    <div class="kv-row"><span class="kv-label">SOA Cluster</span>
+      <span class="kv-value" style="color:{% if cluster %}var(--danger){% else %}var(--muted){% endif %};">
+        {{ cluster | length }}
+      </span>
+    </div>
+    <div class="kv-row"><span class="kv-label">IP Pivot Domains</span>
+      <span class="kv-value">{{ pivots | length }}</span></div>
+    {% if cluster %}
+    <div style="margin-top:8px;max-height:120px;overflow-y:auto;">
+      {% for d in cluster[:20] %}
+      <div style="font-family:var(--mono);font-size:11px;color:var(--text);
+                  padding:2px 0;border-bottom:1px solid var(--border);">{{ d }}</div>
+      {% endfor %}
+      {% if cluster | length > 20 %}
+      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);padding-top:4px;">
+        +{{ cluster | length - 20 }} more...
+      </div>
+      {% endif %}
+    </div>
+    {% endif %}
+  </div>
+
+</div>
+
+<!-- VirusTotal + crt.sh -->
+<div class="grid-2">
+  <div class="card">
+    <div class="card-header"><span class="card-title">VirusTotal</span>
+      {% if vt.get('vt_url') %}
+      <a href="{{ vt.vt_url }}" target="_blank"
+         style="font-family:var(--mono);font-size:11px;color:var(--accent);text-decoration:none;">
+        View →
+      </a>
+      {% endif %}
+    </div>
+    <div class="kv-row"><span class="kv-label">Malicious</span>
+      <span class="kv-value" style="color:{% if vt.get('malicious_votes',0) > 0 %}var(--danger){% else %}var(--muted){% endif %};">
+        {{ vt.get('malicious_votes', 0) }}
+      </span></div>
+    <div class="kv-row"><span class="kv-label">Suspicious</span>
+      <span class="kv-value" style="color:{% if vt.get('suspicious_votes',0) > 0 %}var(--warn){% else %}var(--muted){% endif %};">
+        {{ vt.get('suspicious_votes', 0) }}
+      </span></div>
+    <div class="kv-row"><span class="kv-label">Harmless</span>
+      <span class="kv-value">{{ vt.get('harmless_votes', 0) }}</span></div>
+    {% if vt.get('flagging_engines') %}
+    <div style="margin-top:8px;">
+      {% for eng in vt.flagging_engines %}
+      <div style="font-family:var(--mono);font-size:11px;padding:3px 0;
+                  border-bottom:1px solid var(--border);
+                  color:{% if eng.category == 'malicious' %}var(--danger){% else %}var(--warn){% endif %};">
+        {{ eng.engine }} — {{ eng.result }}
+      </div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <div class="card-header"><span class="card-title">Certificates (crt.sh)</span></div>
+    <div class="kv-row"><span class="kv-label">Certs Found</span>
+      <span class="kv-value">{{ cert.get('cert_count', 0) }}</span></div>
+    <div class="kv-row"><span class="kv-label">Subdomains</span>
+      <span class="kv-value">{{ cert.get('subdomain_count', 0) }}</span></div>
+    <div class="kv-row"><span class="kv-label">First Cert</span>
+      <span class="kv-value">{{ cert.get('first_cert', '—') }}</span></div>
+    {% if cert.get('subdomains') %}
+    <div style="margin-top:8px;">
+      {% for sub in cert.subdomains %}
+      <div style="font-family:var(--mono);font-size:11px;color:var(--text);
+                  padding:2px 0;border-bottom:1px solid var(--border);">{{ sub }}</div>
+      {% endfor %}
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Blockchain -->
+{% if bc.get('total_usd', 0) > 0 or wallets %}
+<div class="card" style="margin-bottom:16px;">
+  <div class="card-header">
+    <span class="card-title">Blockchain Summary</span>
+    <a href="/bounty/{{ bounty.bounty_id }}/blockchain"
+       style="font-family:var(--mono);font-size:11px;color:var(--accent);text-decoration:none;">
+      Full Detail →
+    </a>
+  </div>
+  <div style="font-family:var(--mono);font-size:28px;font-weight:600;
+              color:var(--danger);margin-bottom:8px;">
+    ${{ "{:,.2f}".format(bc.get('total_usd', 0)) }}
+  </div>
+  <div style="font-family:var(--mono);font-size:12px;color:var(--muted);">
+    {{ bc.get('wallet_count', 0) }} wallets · {{ wallets | length }} in database
+  </div>
 </div>
 {% endif %}
 
-<!-- AI Intelligence Report -->
-{% if investigation.ai_report %}
+<!-- AI Report -->
+{% set ai = investigation.ai_report or {} %}
+{% if ai.get('report') %}
 <div class="card">
   <div class="card-header">
     <span class="card-title">AI Intelligence Report</span>
-    <span style="font-family: var(--mono); font-size: 11px; color: var(--muted);">GPT-4o</span>
+    <span style="font-family:var(--mono);font-size:11px;color:var(--muted);">
+      {{ ai.get('model', 'GPT-4o') }}
+    </span>
   </div>
-  <pre>{{ investigation.ai_report.get('report', investigation.ai_report) if investigation.ai_report is mapping else investigation.ai_report }}</pre>
-</div>
-{% endif %}
-
-<!-- Takedown Drafts -->
-{% if investigation.takedown_registrar or investigation.takedown_hosting %}
-<div class="card">
-  <div class="card-header">
-    <span class="card-title">Takedown Drafts</span>
-    {% if bounty.status == 'complete' %}
-    <button class="btn btn-danger" onclick="approveTakedown()">⚡ Approve</button>
-    {% elif bounty.status == 'approved' %}
-    <span class="badge badge-approved">Approved</span>
-    {% endif %}
-  </div>
-
-  {% if investigation.takedown_registrar and investigation.takedown_registrar.get('email_draft') %}
-  <h2 style="margin-bottom: 8px;">Registrar — {{ investigation.takedown_registrar.get('provider', '') }}</h2>
-  <div style="font-family: var(--mono); font-size: 11px; color: var(--muted); margin-bottom: 8px;">
-    To: {{ investigation.takedown_registrar.get('recipient', '—') }}
-  </div>
-  <pre>{{ investigation.takedown_registrar.email_draft }}</pre>
-  {% endif %}
-
-  {% if investigation.takedown_hosting and investigation.takedown_hosting.get('email_draft') %}
-  <h2 style="margin-top: 20px; margin-bottom: 8px;">Hosting Provider — {{ investigation.takedown_hosting.get('provider', '') }}</h2>
-  <div style="font-family: var(--mono); font-size: 11px; color: var(--muted); margin-bottom: 8px;">
-    To: {{ investigation.takedown_hosting.get('recipient', '—') }}
-  </div>
-  <pre>{{ investigation.takedown_hosting.email_draft }}</pre>
-  {% endif %}
+  <div style="font-size:13px;line-height:1.8;color:var(--text);white-space:pre-wrap;">{{ ai.report }}</div>
 </div>
 {% endif %}
 
 {% endif %}
-
-<script>
-function approveTakedown() {
-  if (!confirm('Approve takedowns for {{ bounty.domain }}?')) return;
-  fetch('/bounty/{{ bounty.bounty_id }}/approve', { method: 'POST' })
-    .then(r => r.json())
-    .then(() => window.location.reload());
-}
-</script>
 {% endblock %}
