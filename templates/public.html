@@ -417,6 +417,177 @@
         </div>
       </div>
     </div>
+    <!-- 
+  I4G ScamBusters Leaderboard Widget
+  Drop this into public.html where you want the leaderboard to appear.
+  Fetches live data from the I4G API every 5 minutes.
+  Highlights UTampa - Cyber Spartans automatically.
+-->
+
+<div id="leaderboard-section" style="margin-bottom: 32px;">
+
+  <!-- Section header -->
+  <div style="display:flex; align-items:center; justify-content:space-between; margin-bottom: 20px;">
+    <div>
+      <div class="section-title">I4G ScamBusters Leaderboard</div>
+      <div style="font-size:12px; color:var(--muted); margin-top:3px; font-family:var(--mono);">
+        Live · refreshes every 5 minutes ·
+        <a href="https://www.intelligenceforgood.org/scambusters-leaderboard"
+           target="_blank" style="color:var(--accent); text-decoration:none;">
+          intelligenceforgood.org →
+        </a>
+      </div>
+    </div>
+    <div id="lb-last-updated" style="font-family:var(--mono); font-size:11px; color:var(--muted);"></div>
+  </div>
+
+  <div class="grid-2">
+
+    <!-- Teams -->
+    <div class="card">
+      <div style="font-family:var(--mono); font-size:11px; text-transform:uppercase;
+                  letter-spacing:0.1em; color:var(--muted); margin-bottom:14px;">
+        Team Rankings
+      </div>
+      <div id="teams-table">
+        <div style="color:var(--muted); font-family:var(--mono); font-size:12px; padding:16px 0;">
+          Loading...
+        </div>
+      </div>
+    </div>
+
+    <!-- Students -->
+    <div class="card">
+      <div style="font-family:var(--mono); font-size:11px; text-transform:uppercase;
+                  letter-spacing:0.1em; color:var(--muted); margin-bottom:14px;">
+        Student Rankings
+      </div>
+      <div id="students-table">
+        <div style="color:var(--muted); font-family:var(--mono); font-size:12px; padding:16px 0;">
+          Loading...
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<script>
+const I4G_STUDENTS = 'https://www.intelligenceforgood.org/scambusters-leaderboard/api/students?limit=50&offset=0';
+const I4G_TEAMS    = 'https://www.intelligenceforgood.org/scambusters-leaderboard/api/teams?limit=50&offset=0';
+const MY_TEAM      = 'UTampa - Cyber Spartans';
+const MY_USERNAME  = '{{ my_username or "" }}';
+
+function rankBadge(rank) {
+  if (rank === 1) return '<span style="color:#FFD700;font-weight:600;">1</span>';
+  if (rank === 2) return '<span style="color:#C0C0C0;font-weight:600;">2</span>';
+  if (rank === 3) return '<span style="color:#CD7F32;font-weight:600;">3</span>';
+  return `<span style="color:var(--muted);">${rank}</span>`;
+}
+
+function isMyTeam(name) {
+  return name === MY_TEAM;
+}
+
+function isMe(username) {
+  return MY_USERNAME && username === MY_USERNAME;
+}
+
+async function loadLeaderboard() {
+  try {
+    const [studentsRes, teamsRes] = await Promise.all([
+      fetch(I4G_STUDENTS),
+      fetch(I4G_TEAMS),
+    ]);
+
+    const studentsData = await studentsRes.json();
+    const teamsData    = await teamsRes.json();
+
+    renderTeams(teamsData.rows || []);
+    renderStudents(studentsData.rows || []);
+
+    const now = new Date();
+    document.getElementById('lb-last-updated').textContent =
+      `Updated ${now.toLocaleTimeString()}`;
+
+  } catch(e) {
+    console.error('Leaderboard fetch failed:', e);
+    document.getElementById('teams-table').innerHTML =
+      '<div style="color:var(--muted);font-family:var(--mono);font-size:12px;padding:12px 0;">Unable to load leaderboard.</div>';
+    document.getElementById('students-table').innerHTML =
+      '<div style="color:var(--muted);font-family:var(--mono);font-size:12px;padding:12px 0;">Unable to load leaderboard.</div>';
+  }
+}
+
+function renderTeams(teams) {
+  const el = document.getElementById('teams-table');
+  if (!teams.length) { el.innerHTML = '<div style="color:var(--muted);font-size:12px;font-family:var(--mono);">No data.</div>'; return; }
+
+  const rows = teams.map(t => {
+    const highlight = isMyTeam(t.team_name);
+    const bg = highlight ? 'background:rgba(0,212,170,0.06); border-left:2px solid var(--accent);' : '';
+    const nameColor = highlight ? 'color:var(--accent);font-weight:500;' : 'color:var(--text);';
+    return `
+      <div style="display:flex;align-items:center;gap:10px;padding:7px 8px;
+                  border-bottom:1px solid var(--border);font-family:var(--mono);
+                  font-size:12px;${bg}">
+        <span style="min-width:24px;text-align:right;">${rankBadge(t.rank)}</span>
+        <span style="flex:1;${nameColor}">${t.team_name}</span>
+        <span style="color:var(--muted);font-size:11px;">${t.members}m</span>
+        <span style="color:var(--accent);font-weight:500;min-width:60px;text-align:right;">
+          ${t.score.toLocaleString(undefined, {maximumFractionDigits:0})}
+        </span>
+      </div>`;
+  }).join('');
+
+  el.innerHTML = rows;
+}
+
+function renderStudents(students) {
+  const el = document.getElementById('students-table');
+  if (!students.length) { el.innerHTML = '<div style="color:var(--muted);font-size:12px;font-family:var(--mono);">No data.</div>'; return; }
+
+  // Show top 15, highlight UTampa members and self
+  const top = students.slice(0, 15);
+  const rows = top.map(s => {
+    const myTeam = isMyTeam(s.team_name);
+    const me = isMe(s.username);
+    const bg = me
+      ? 'background:rgba(0,153,255,0.08);border-left:2px solid var(--blue);'
+      : myTeam
+        ? 'background:rgba(0,212,170,0.04);border-left:2px solid rgba(0,212,170,0.3);'
+        : '';
+    const nameColor = me ? 'color:var(--blue);font-weight:500;'
+                    : myTeam ? 'color:var(--accent);'
+                    : 'color:var(--text);';
+    const meTag = me ? '<span style="background:var(--blue);color:#000;font-size:9px;padding:1px 5px;border-radius:2px;margin-left:4px;">YOU</span>' : '';
+    const uniShort = s.university.replace('University of ', 'U ').replace('University', 'Univ');
+
+    return `
+      <div style="display:flex;align-items:center;gap:10px;padding:7px 8px;
+                  border-bottom:1px solid var(--border);font-family:var(--mono);
+                  font-size:12px;${bg}">
+        <span style="min-width:24px;text-align:right;">${rankBadge(s.rank)}</span>
+        <span style="flex:1;${nameColor}">${s.username}${meTag}</span>
+        <span style="color:var(--muted);font-size:10px;max-width:100px;
+                     overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">
+          ${uniShort}
+        </span>
+        <span style="color:var(--accent);font-weight:500;min-width:50px;text-align:right;">
+          ${s.score.toLocaleString()}
+        </span>
+      </div>`;
+  }).join('');
+
+  el.innerHTML = rows;
+}
+
+// Load on page init
+loadLeaderboard();
+
+// Refresh every 5 minutes
+setInterval(loadLeaderboard, 5 * 60 * 1000);
+</script>
   </div>
 </main>
 
