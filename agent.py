@@ -170,6 +170,7 @@ if __name__ == "__main__":
     from scripts.db import init_db
     init_db()
 
+    from scripts.db import add_bounty
     domain = sys.argv[1] if len(sys.argv) > 1 else "aitimart.com"
     test_bounty = {
         "bounty_id":  f"test_{domain.replace('.','_')}",
@@ -177,5 +178,7 @@ if __name__ == "__main__":
         "target_url": f"https://{domain}",
         "sponsor":    "test",
         "multiplier": 1.0,
+        "raw":        f"CLI test run for {domain}",
     }
+    add_bounty(test_bounty)
     run_investigation(test_bounty)
