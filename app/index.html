@@ -1,0 +1,106 @@
+{% extends "base.html" %}
+{% block title %}Bounty Board — ScamBusters Agent{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Bounty Board</h1>
+    <div class="page-subtitle">Intelligence For Good · Crypto Scam Investigations</div>
+  </div>
+  <a href="/intake" class="btn btn-primary">+ Paste Bounty</a>
+</div>
+
+<!-- Stats -->
+<div class="stats-grid">
+  <div class="stat-card">
+    <div class="stat-value">{{ stats.total_bounties }}</div>
+    <div class="stat-label">Total Bounties</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" style="color: var(--warn)">
+      {{ stats.by_status.get('investigating', 0) }}
+    </div>
+    <div class="stat-label">Investigating</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value">{{ stats.by_status.get('complete', 0) }}</div>
+    <div class="stat-label">Complete</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" style="color: var(--accent2)">
+      {{ stats.by_status.get('approved', 0) }}
+    </div>
+    <div class="stat-label">Approved</div>
+  </div>
+  <div class="stat-card">
+    <div class="stat-value" style="color: var(--purple)">
+      {{ stats.domains_investigated }}
+    </div>
+    <div class="stat-label">Domains Hit</div>
+  </div>
+</div>
+
+<!-- Bounty Table -->
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Active Bounties</span>
+  </div>
+
+  {% if bounties %}
+  <table>
+    <thead>
+      <tr>
+        <th>Domain</th>
+        <th>Bounty ID</th>
+        <th>Sponsor</th>
+        <th>Mult.</th>
+        <th>Expires</th>
+        <th>Status</th>
+        <th>Actions</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for b in bounties %}
+      <tr>
+        <td>
+          <a href="/bounty/{{ b.bounty_id }}" class="mono" style="color: var(--accent); text-decoration: none;">
+            {{ b.domain }}
+          </a>
+        </td>
+        <td class="mono" style="color: var(--muted); font-size: 11px;">
+          {{ b.bounty_id[:24] }}…
+        </td>
+        <td style="color: var(--muted)">{{ b.sponsor or '—' }}</td>
+        <td class="mono" style="color: var(--warn)">
+          {% if b.multiplier %}×{{ b.multiplier }}{% else %}×1.0{% endif %}
+        </td>
+        <td style="color: var(--muted); font-size: 11px;">
+          {{ b.expires_raw or '—' }}
+        </td>
+        <td>
+          <span class="badge badge-{{ b.status }}">{{ b.status }}</span>
+        </td>
+        <td>
+          <div style="display:flex; gap: 6px;">
+            <a href="/bounty/{{ b.bounty_id }}" class="btn btn-ghost">view</a>
+            {% if b.status == 'complete' or b.status == 'approved' %}
+            <a href="/bounty/{{ b.bounty_id }}/report" class="btn btn-ghost">report</a>
+            {% endif %}
+            {% if b.status == 'complete' %}
+            <a href="/bounty/{{ b.bounty_id }}/submission" class="btn btn-ghost">submit</a>
+            {% endif %}
+          </div>
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+
+  {% else %}
+  <div style="padding: 48px; text-align: center; color: var(--muted); font-family: var(--mono); font-size: 13px;">
+    No bounties yet.<br>
+    <a href="/intake" style="color: var(--accent); text-decoration: none;">Paste a bounty to get started →</a>
+  </div>
+  {% endif %}
+</div>
+{% endblock %}
