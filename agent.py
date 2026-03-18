@@ -1,6 +1,7 @@
 """
-ScamBusters Agent — Main Orchestrator
-Runs the full investigation pipeline end to end.
+agent.py — ScamBusters Agent v1.0 Orchestrator
+Runs the full investigation pipeline for a given domain/bounty.
+Called by the Flask app for each queued bounty.
 """
 
 import os
@@ -10,79 +11,107 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from scripts.discover_scams import discover_scam_domains
-from scripts.urlscan_lookup import run_urlscan
-from scripts.whois_lookup import run_whois
-from scripts.passive_dns import run_passive_dns
-from scripts.social_osint import run_social_osint
+from scripts.urlscan_lookup   import run_urlscan
+from scripts.whois_lookup     import run_whois
+from scripts.passive_dns      import run_passive_dns
+from scripts.social_osint     import run_social_osint
 from scripts.report_generator import generate_report
+from scripts.takedown_drafter import draft_all_takedowns
+from scripts.submission_packager import build_submission_package
+from scripts.bounty_store     import save_investigation, update_status
 
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "outputs/")
-MAX_DOMAINS = int(os.getenv("MAX_DOMAINS_PER_RUN", 20))
 
 
-def run_pipeline():
-    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    run_dir = os.path.join(OUTPUT_DIR, f"run_{timestamp}")
-    os.makedirs(run_dir, exist_ok=True)
+def run_investigation(bounty: dict, progress_callback=None) -> dict:
+    """
+    Run the full investigation pipeline for a bounty.
+    progress_callback(stage, message) called at each step for live UI updates.
+    """
+    domain    = bounty["domain"]
+    bounty_id = bounty["bounty_id"]
+    results   = {}
 
-    print("\n" + "="*60)
-    print("  SCAMBUSTERS AGENT — Starting investigation pipeline")
-    print("="*60 + "\n")
+    def progress(stage, msg):
+        if progress_callback:
+            progress_callback(stage, msg)
+        else:
+            print(f"  [{stage}] {msg}")
 
-    # Stage 1: Discovery
-    print("[1/6] Discovering scam domains from HYIP monitors...")
-    domains = discover_scam_domains(max_domains=MAX_DOMAINS)
-    print(f"      Found {len(domains)} domains.\n")
+    update_status(bounty_id, "investigating")
 
-    results = []
+    # Stage 2: URLScan
+    progress("urlscan", f"Submitting {domain} to URLScan...")
+    results["urlscan"] = run_urlscan(domain)
+    results["similar_domains"] = results["urlscan"].pop("similar_domains", [])
+    progress("urlscan", f"Done — IP: {results['urlscan'].get('primary_ip')}, "
+             f"{len(results['similar_domains'])} similar sites")
 
-    for i, domain in enumerate(domains, 1):
-        print(f"[Domain {i}/{len(domains)}] Investigating: {domain}")
-        scam_data = {"domain": domain, "timestamp": timestamp}
+    # Stage 3: WHOIS
+    progress("whois", "Running WHOIS lookup...")
+    results["whois"] = run_whois(domain)
+    progress("whois", f"Registrar: {results['whois'].get('registrar')} | "
+             f"SOA: {results['whois'].get('soa_email')}")
 
-        # Stage 2: URLScan
-        print("  → URLScan...")
-        scam_data["urlscan"] = run_urlscan(domain)
+    # Stage 4: Passive DNS
+    progress("passive_dns", "Querying Passive DNS...")
+    soa_email = results["whois"].get("soa_email")
+    results["passive_dns"] = run_passive_dns(domain, soa_email=soa_email)
+    linked_count = len(results["passive_dns"].get("linked_domains", []))
+    progress("passive_dns", f"Found {linked_count} linked domains")
 
-        # Stage 3: WHOIS
-        print("  → WHOIS...")
-        scam_data["whois"] = run_whois(domain)
+    # Stage 5: Social OSINT
+    progress("social_osint", "Extracting social links and wallets...")
+    results["social_osint"] = run_social_osint(domain)
+    wallet_count = sum(
+        len(v) for v in results["social_osint"].get("wallets_from_html", {}).values()
+    )
+    progress("social_osint", f"Found {wallet_count} wallet addresses from HTML")
 
-        # Stage 4: Passive DNS
-        print("  → Passive DNS...")
-        scam_data["passive_dns"] = run_passive_dns(domain)
+    # Stage 6: AI Report
+    progress("report", "Generating AI intelligence report...")
+    results["ai_report"] = generate_report(domain, results)
+    progress("report", "Report generated")
 
-        # Stage 5: Social OSINT
-        print("  → Social OSINT + Google Dorking...")
-        scam_data["social_osint"] = run_social_osint(domain)
+    # Stage 7: Takedown drafts
+    progress("takedowns", "Drafting takedown emails...")
+    takedowns = draft_all_takedowns(domain, results)
+    results["takedown_registrar"] = takedowns.get("registrar")
+    results["takedown_hosting"]   = takedowns.get("hosting")
+    progress("takedowns", "Takedown emails drafted — awaiting your approval")
 
-        # Stage 6: Report Generation
-        print("  → Generating AI report...")
-        scam_data["report"] = generate_report(scam_data)
+    # Build submission package
+    progress("packaging", "Building I4G submission package...")
+    results["submission_package"] = build_submission_package(bounty, results)
+    progress("packaging", "Package ready for review")
 
-        results.append(scam_data)
+    # Save to DB
+    save_investigation(bounty_id, domain, results)
+    update_status(bounty_id, "complete")
 
-        # Save per-domain JSON
-        domain_file = os.path.join(run_dir, f"{domain.replace('.', '_')}.json")
-        with open(domain_file, "w") as f:
-            json.dump(scam_data, f, indent=2, default=str)
+    # Save JSON to disk
+    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    out_file = os.path.join(
+        OUTPUT_DIR,
+        f"{bounty_id}_{domain.replace('.', '_')}.json"
+    )
+    with open(out_file, "w") as f:
+        json.dump({**bounty, **results}, f, indent=2, default=str)
 
-        print(f"  ✓ Saved to {domain_file}\n")
-
-    # Save full run summary
-    summary_file = os.path.join(run_dir, "summary.json")
-    with open(summary_file, "w") as f:
-        json.dump(results, f, indent=2, default=str)
-
-    print("="*60)
-    print(f"  Pipeline complete. {len(results)} domains investigated.")
-    print(f"  Results saved to: {run_dir}")
-    print(f"  Launch dashboard: python app.py")
-    print("="*60 + "\n")
-
-    return run_dir
+    progress("done", f"Investigation complete — saved to {out_file}")
+    return results
 
 
 if __name__ == "__main__":
-    run_pipeline()
+    import sys
+    from scripts.bounty_store import init_db
+    init_db()
+
+    test_bounty = {
+        "bounty_id": "test_001",
+        "domain": sys.argv[1] if len(sys.argv) > 1 else "aitimart.com",
+        "target_url": f"https://{sys.argv[1] if len(sys.argv) > 1 else 'aitimart.com'}",
+        "sponsor": "Intelligence For Good",
+        "multiplier": 1.0,
+    }
+    run_investigation(test_bounty)
