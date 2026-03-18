@@ -1,0 +1,521 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ScamBusters Agent — Live Intelligence Dashboard</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@300;400;500;600&display=swap');
+
+  :root {
+    --bg:      #07090c;
+    --bg2:     #0d1117;
+    --bg3:     #161b22;
+    --border:  #1c2128;
+    --border2: #262d36;
+    --text:    #c9d1d9;
+    --muted:   #484f58;
+    --accent:  #00d4aa;
+    --blue:    #0099ff;
+    --warn:    #ff8c00;
+    --danger:  #ff3b5c;
+    --purple:  #9b6dff;
+    --mono:    'IBM Plex Mono', monospace;
+    --sans:    'IBM Plex Sans', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: var(--sans); }
+
+  /* ── Header ── */
+  header {
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    padding: 0 32px;
+    height: 60px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  .brand-name {
+    font-family: var(--mono);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--accent);
+    letter-spacing: 0.08em;
+  }
+
+  .brand-tag {
+    font-family: var(--mono);
+    font-size: 10px;
+    color: var(--muted);
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    padding: 2px 8px;
+    border-radius: 3px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+  }
+
+  .header-right {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .live-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  /* ── Layout ── */
+  main { max-width: 1400px; margin: 0 auto; padding: 32px; }
+
+  /* ── Hero stats ── */
+  .hero {
+    text-align: center;
+    padding: 48px 0 40px;
+    border-bottom: 1px solid var(--border);
+    margin-bottom: 40px;
+  }
+
+  .hero h1 {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.15em;
+    margin-bottom: 8px;
+  }
+
+  .hero-tagline {
+    font-size: 32px;
+    font-weight: 300;
+    color: var(--text);
+    line-height: 1.3;
+    margin-bottom: 6px;
+  }
+
+  .hero-tagline span { color: var(--accent); font-weight: 500; }
+
+  .hero-sub {
+    font-size: 14px;
+    color: var(--muted);
+    margin-bottom: 40px;
+  }
+
+  .mega-stats {
+    display: flex;
+    justify-content: center;
+    gap: 48px;
+    flex-wrap: wrap;
+  }
+
+  .mega-stat {
+    text-align: center;
+  }
+
+  .mega-value {
+    font-family: var(--mono);
+    font-size: 42px;
+    font-weight: 600;
+    line-height: 1;
+    margin-bottom: 4px;
+  }
+
+  .mega-label {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+  }
+
+  /* ── Section headers ── */
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 20px;
+  }
+
+  .section-title {
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.12em;
+    color: var(--muted);
+  }
+
+  /* ── Grid ── */
+  .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 32px; }
+  .grid-3 { display: grid; grid-template-columns: repeat(3, 1fr); gap: 20px; margin-bottom: 32px; }
+
+  @media (max-width: 900px) {
+    .grid-2, .grid-3 { grid-template-columns: 1fr; }
+  }
+
+  /* ── Cards ── */
+  .card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 20px;
+  }
+
+  /* ── Network Graph ── */
+  #graph-container {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    margin-bottom: 32px;
+    overflow: hidden;
+  }
+
+  #graph-header {
+    padding: 16px 20px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  #graph-svg {
+    width: 100%;
+    height: 480px;
+    display: block;
+  }
+
+  .graph-legend {
+    display: flex;
+    gap: 16px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    flex-wrap: wrap;
+  }
+
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-dot { width: 8px; height: 8px; border-radius: 50%; }
+
+  /* ── Recent investigations table ── */
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  tr:hover td { background: var(--bg3); }
+  tr:last-child td { border-bottom: none; }
+
+  /* ── Risk badges ── */
+  .risk {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-family: var(--mono);
+    font-size: 10px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .risk-CRITICAL { background: #2a0810; color: var(--danger); border: 1px solid #3a0810; }
+  .risk-HIGH     { background: #2a1808; color: var(--warn);   border: 1px solid #3a2008; }
+  .risk-MEDIUM   { background: #1a2010; color: #88cc44;       border: 1px solid #2a3010; }
+  .risk-LOW      { background: #081820; color: var(--blue);   border: 1px solid #0a2030; }
+  .risk-MINIMAL  { background: var(--bg3); color: var(--muted); border: 1px solid var(--border); }
+  .risk-unknown  { background: var(--bg3); color: var(--muted); border: 1px solid var(--border); }
+
+  /* ── Wallet stats ── */
+  .wallet-bar {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 8px 0;
+    border-bottom: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  .wallet-bar:last-child { border-bottom: none; }
+  .wallet-currency { color: var(--warn); min-width: 60px; font-weight: 600; }
+  .wallet-amount { color: var(--text); flex: 1; }
+  .wallet-count { color: var(--muted); }
+
+  /* ── Footer ── */
+  footer {
+    border-top: 1px solid var(--border);
+    padding: 24px 32px;
+    text-align: center;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    margin-top: 48px;
+  }
+
+  footer a { color: var(--accent); text-decoration: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <span class="brand-name">SCAMBUSTERS AGENT</span>
+    <span class="brand-tag">v2.0 · Live Intelligence</span>
+  </div>
+  <div class="header-right">
+    <div class="live-dot"></div>
+    <span>LIVE</span>
+    <span style="color: var(--border2)">|</span>
+    <span>I4G · University of Tampa</span>
+    <span style="color: var(--border2)">|</span>
+    <a href="/api/docs" style="color: var(--muted); text-decoration: none;">API</a>
+    <a href="{{ private_url }}" style="color: var(--muted); text-decoration: none;">Investigator Login</a>
+  </div>
+</header>
+
+<main>
+  <!-- Hero Stats -->
+  <div class="hero">
+    <h1>ScamBusters Intelligence Dashboard</h1>
+    <div class="hero-tagline">
+      Automated crypto scam<br>
+      <span>intelligence, takedowns, and attribution.</span>
+    </div>
+    <div class="hero-sub">
+      Built for Intelligence For Good · University of Tampa Center for Cybersecurity
+    </div>
+
+    <div class="mega-stats">
+      <div class="mega-stat">
+        <div class="mega-value" style="color: var(--accent)">{{ stats.total_bounties }}</div>
+        <div class="mega-label">Investigations</div>
+      </div>
+      <div class="mega-stat">
+        <div class="mega-value" style="color: var(--warn)">${{ "{:,.0f}".format(stats.total_stolen_usd) }}</div>
+        <div class="mega-label">USD Traced On-Chain</div>
+      </div>
+      <div class="mega-stat">
+        <div class="mega-value" style="color: var(--blue)">{{ stats.wallet_count }}</div>
+        <div class="mega-label">Wallets Identified</div>
+      </div>
+      <div class="mega-stat">
+        <div class="mega-value" style="color: var(--danger)">{{ stats.threat_actors }}</div>
+        <div class="mega-label">Threat Actors Mapped</div>
+      </div>
+      <div class="mega-stat">
+        <div class="mega-value" style="color: var(--purple)">{{ stats.by_status.get('approved', 0) }}</div>
+        <div class="mega-label">Takedowns Filed</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Network Graph -->
+  <div id="graph-container">
+    <div id="graph-header">
+      <div>
+        <div class="section-title">Scam Network Graph</div>
+        <div style="font-size: 12px; color: var(--muted); margin-top: 3px;">
+          Domains · IPs · Wallets · Operators — connected by shared infrastructure
+        </div>
+      </div>
+      <div class="graph-legend">
+        <div class="legend-item"><div class="legend-dot" style="background:#00d4aa"></div>Scam domain</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#0099ff"></div>IP address</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#ff8c00"></div>Wallet</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#ff3b5c"></div>Operator</div>
+        <div class="legend-item"><div class="legend-dot" style="background:#9b6dff"></div>Hosting ASN</div>
+      </div>
+    </div>
+    <svg id="graph-svg"></svg>
+  </div>
+
+  <div class="grid-2">
+    <!-- Recent Investigations -->
+    <div class="card">
+      <div class="section-header">
+        <div class="section-title">Recent Investigations</div>
+      </div>
+      {% if stats.recent_investigations %}
+      <table>
+        <thead>
+          <tr><th>Domain</th><th>Risk</th><th>Date</th></tr>
+        </thead>
+        <tbody>
+          {% for inv in stats.recent_investigations %}
+          <tr>
+            <td style="color: var(--accent)">{{ inv.domain }}</td>
+            <td><span class="risk risk-{{ inv.risk_level or 'unknown' }}">{{ inv.risk_level or '—' }}</span></td>
+            <td style="color: var(--muted)">{{ inv.created_at.strftime('%b %d') if inv.created_at else '—' }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      {% else %}
+      <div style="color: var(--muted); font-family: var(--mono); font-size: 12px; padding: 24px 0;">
+        No investigations yet.
+      </div>
+      {% endif %}
+    </div>
+
+    <!-- Status Breakdown -->
+    <div class="card">
+      <div class="section-header">
+        <div class="section-title">Pipeline Status</div>
+      </div>
+      {% for status, count in stats.by_status.items() %}
+      <div style="display:flex; justify-content:space-between; padding: 8px 0; border-bottom: 1px solid var(--border); font-family: var(--mono); font-size: 12px;">
+        <span style="color: var(--muted); text-transform: uppercase; font-size: 11px;">{{ status }}</span>
+        <span style="color: var(--text)">{{ count }}</span>
+      </div>
+      {% endfor %}
+
+      <div style="margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--border);">
+        <div class="section-title" style="margin-bottom: 12px;">About This Project</div>
+        <div style="font-size: 13px; color: var(--muted); line-height: 1.7;">
+          ScamBusters Agent automates the crypto scam investigation methodology
+          developed by <a href="https://intelligenceforgood.org" style="color: var(--accent);">Intelligence For Good</a>
+          and the UAB Cyber Forensics Research Laboratory.
+          Built by <a href="https://elijahbeese.com" style="color: var(--accent);">Elijah Beese</a>
+          at the University of Tampa.
+        </div>
+        <div style="margin-top: 12px;">
+          <a href="https://github.com/elijahbeese/scambusters-agent"
+             style="color: var(--accent); font-family: var(--mono); font-size: 12px; text-decoration: none;">
+            github.com/elijahbeese/scambusters-agent →
+          </a>
+        </div>
+      </div>
+    </div>
+  </div>
+</main>
+
+<footer>
+  ScamBusters Agent v2.0 ·
+  <a href="https://github.com/elijahbeese/scambusters-agent">GitHub</a> ·
+  <a href="/api/docs">API</a> ·
+  Built for <a href="https://intelligenceforgood.org">Intelligence For Good</a> ·
+  University of Tampa Center for Cybersecurity ·
+  <a href="https://elijahbeese.com">Elijah Beese</a>
+</footer>
+
+<script>
+// D3 Force Graph
+async function loadGraph() {
+  try {
+    const res = await fetch('/api/graph/full');
+    if (!res.ok) return;
+    const data = await res.json();
+    if (!data.nodes?.length) return;
+    renderGraph(data);
+  } catch(e) {
+    console.log('Graph not available yet:', e);
+  }
+}
+
+function renderGraph(data) {
+  const svg = d3.select('#graph-svg');
+  const w = document.getElementById('graph-svg').clientWidth;
+  const h = 480;
+
+  svg.selectAll('*').remove();
+
+  const sim = d3.forceSimulation(data.nodes)
+    .force('link', d3.forceLink(data.links).id(d => d.id).distance(80))
+    .force('charge', d3.forceManyBody().strength(-120))
+    .force('center', d3.forceCenter(w/2, h/2))
+    .force('collision', d3.forceCollide(12));
+
+  const g = svg.append('g');
+
+  svg.call(d3.zoom()
+    .scaleExtent([0.3, 4])
+    .on('zoom', e => g.attr('transform', e.transform))
+  );
+
+  const link = g.append('g').selectAll('line')
+    .data(data.links).join('line')
+    .attr('stroke', d => d.color || '#1c2128')
+    .attr('stroke-width', d => Math.min(d.width || 1, 3))
+    .attr('stroke-opacity', 0.6);
+
+  const node = g.append('g').selectAll('circle')
+    .data(data.nodes).join('circle')
+    .attr('r', d => d.size || 6)
+    .attr('fill', d => d.color || '#00d4aa')
+    .attr('fill-opacity', 0.85)
+    .attr('stroke', '#07090c')
+    .attr('stroke-width', 1.5)
+    .call(d3.drag()
+      .on('start', (e, d) => { if (!e.active) sim.alphaTarget(0.3).restart(); d.fx=d.x; d.fy=d.y; })
+      .on('drag',  (e, d) => { d.fx=e.x; d.fy=e.y; })
+      .on('end',   (e, d) => { if (!e.active) sim.alphaTarget(0); d.fx=null; d.fy=null; })
+    );
+
+  const label = g.append('g').selectAll('text')
+    .data(data.nodes.filter(d => d.type === 'domain' || d.type === 'actor'))
+    .join('text')
+    .text(d => d.label)
+    .attr('font-size', '9px')
+    .attr('font-family', "'IBM Plex Mono', monospace")
+    .attr('fill', '#484f58')
+    .attr('dx', d => (d.size || 6) + 3)
+    .attr('dy', '0.35em');
+
+  node.append('title').text(d => `${d.type}: ${d.id}`);
+
+  sim.on('tick', () => {
+    link
+      .attr('x1', d => d.source.x).attr('y1', d => d.source.y)
+      .attr('x2', d => d.target.x).attr('y2', d => d.target.y);
+    node
+      .attr('cx', d => d.x).attr('cy', d => d.y);
+    label
+      .attr('x', d => d.x).attr('y', d => d.y);
+  });
+}
+
+loadGraph();
+
+// Auto-refresh stats every 60s
+setInterval(async () => {
+  try {
+    const r = await fetch('/api/stats');
+    const stats = await r.json();
+    // Update mega stats if needed
+  } catch(e) {}
+}, 60000);
+</script>
+
+</body>
+</html>
