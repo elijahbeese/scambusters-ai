@@ -167,7 +167,7 @@ def run_investigation(bounty: dict, progress_callback=None) -> dict:
 
 if __name__ == "__main__":
     import sys
-    from scripts.db import init_db
+    from scripts.db import init_db, add_bounty
     init_db()
 
     from scripts.db import add_bounty

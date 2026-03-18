@@ -5,57 +5,59 @@
 <div class="page-header">
   <div>
     <h1>Bounty Board</h1>
-    <div class="page-subtitle">Intelligence For Good · Crypto Scam Investigations</div>
+    <div class="page-subtitle">ScamBusters Agent v2.0 · Private Investigator Dashboard</div>
   </div>
-  <a href="/intake" class="btn btn-primary">+ Paste Bounty</a>
+  <a href="/intake" class="btn btn-primary">+ New Bounty</a>
 </div>
 
-<!-- Stats -->
-<div class="stats-grid">
-  <div class="stat-card">
-    <div class="stat-value">{{ stats.total_bounties }}</div>
-    <div class="stat-label">Total Bounties</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-value" style="color: var(--warn)">
-      {{ stats.by_status.get('investigating', 0) }}
+<!-- Stats row -->
+<div class="grid-3" style="margin-bottom:24px;">
+  <div class="card" style="text-align:center;">
+    <div style="font-family:var(--mono);font-size:32px;font-weight:600;color:var(--accent);">
+      {{ stats.total_bounties or 0 }}
     </div>
-    <div class="stat-label">Investigating</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:4px;
+                text-transform:uppercase;letter-spacing:0.1em;">Total Investigations</div>
   </div>
-  <div class="stat-card">
-    <div class="stat-value">{{ stats.by_status.get('complete', 0) }}</div>
-    <div class="stat-label">Complete</div>
+  <div class="card" style="text-align:center;">
+    <div style="font-family:var(--mono);font-size:32px;font-weight:600;color:var(--warn);">
+      ${{ "{:,.0f}".format(stats.total_stolen_usd or 0) }}
+    </div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:4px;
+                text-transform:uppercase;letter-spacing:0.1em;">USD Traced On-Chain</div>
   </div>
-  <div class="stat-card">
-    <div class="stat-value" style="color: var(--accent2)">
+  <div class="card" style="text-align:center;">
+    <div style="font-family:var(--mono);font-size:32px;font-weight:600;color:var(--blue);">
       {{ stats.by_status.get('approved', 0) }}
     </div>
-    <div class="stat-label">Approved</div>
-  </div>
-  <div class="stat-card">
-    <div class="stat-value" style="color: var(--purple)">
-      {{ stats.domains_investigated }}
-    </div>
-    <div class="stat-label">Domains Hit</div>
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:4px;
+                text-transform:uppercase;letter-spacing:0.1em;">Takedowns Filed</div>
   </div>
 </div>
 
-<!-- Bounty Table -->
+<!-- Bounty table -->
 <div class="card">
   <div class="card-header">
     <span class="card-title">Active Bounties</span>
+    <span style="font-family:var(--mono);font-size:11px;color:var(--muted);">
+      {{ bounties | length }} total
+    </span>
   </div>
 
-  {% if bounties %}
+  {% if not bounties %}
+  <div style="text-align:center;padding:48px;color:var(--muted);font-family:var(--mono);font-size:13px;">
+    No bounties yet. <a href="/intake" style="color:var(--accent);">Paste one from Discord →</a>
+  </div>
+  {% else %}
   <table>
     <thead>
       <tr>
         <th>Domain</th>
-        <th>Bounty ID</th>
-        <th>Sponsor</th>
-        <th>Mult.</th>
-        <th>Expires</th>
         <th>Status</th>
+        <th>Risk</th>
+        <th>Sponsor</th>
+        <th>Multiplier</th>
+        <th>Created</th>
         <th>Actions</th>
       </tr>
     </thead>
@@ -63,31 +65,38 @@
       {% for b in bounties %}
       <tr>
         <td>
-          <a href="/bounty/{{ b.bounty_id }}" class="mono" style="color: var(--accent); text-decoration: none;">
+          <a href="/bounty/{{ b.bounty_id }}"
+             style="color:var(--accent);text-decoration:none;font-weight:500;">
             {{ b.domain }}
           </a>
         </td>
-        <td class="mono" style="color: var(--muted); font-size: 11px;">
-          {{ b.bounty_id[:24] }}…
-        </td>
-        <td style="color: var(--muted)">{{ b.sponsor or '—' }}</td>
-        <td class="mono" style="color: var(--warn)">
-          {% if b.multiplier %}×{{ b.multiplier }}{% else %}×1.0{% endif %}
-        </td>
-        <td style="color: var(--muted); font-size: 11px;">
-          {{ b.expires_raw or '—' }}
+        <td>
+          <span class="badge badge-{{ b.status }}">{{ b.status | upper }}</span>
         </td>
         <td>
-          <span class="badge badge-{{ b.status }}">{{ b.status }}</span>
+          {% if b.risk_level and b.risk_level != 'unknown' %}
+          <span class="risk risk-{{ b.risk_level }}">{{ b.risk_level }}</span>
+          <span style="color:var(--muted);font-size:10px;margin-left:4px;">{{ b.risk_score }}/100</span>
+          {% else %}
+          <span style="color:var(--muted);">—</span>
+          {% endif %}
+        </td>
+        <td style="color:var(--muted);">{{ b.sponsor or '—' }}</td>
+        <td style="color:{% if b.multiplier and b.multiplier > 1 %}var(--warn){% else %}var(--muted){% endif %};">
+          {% if b.multiplier %}×{{ b.multiplier }}{% else %}—{% endif %}
+        </td>
+        <td style="color:var(--muted);font-size:11px;">
+          {{ b.created_at.strftime('%b %d %H:%M') if b.created_at else '—' }}
         </td>
         <td>
-          <div style="display:flex; gap: 6px;">
-            <a href="/bounty/{{ b.bounty_id }}" class="btn btn-ghost">view</a>
+          <div style="display:flex;gap:4px;">
+            <a href="/bounty/{{ b.bounty_id }}" class="btn btn-ghost"
+               style="padding:3px 8px;font-size:11px;">View</a>
             {% if b.status == 'complete' or b.status == 'approved' %}
-            <a href="/bounty/{{ b.bounty_id }}/report" class="btn btn-ghost">report</a>
-            {% endif %}
-            {% if b.status == 'complete' %}
-            <a href="/bounty/{{ b.bounty_id }}/submission" class="btn btn-ghost">submit</a>
+            <a href="/bounty/{{ b.bounty_id }}/report" class="btn btn-ghost"
+               style="padding:3px 8px;font-size:11px;">Report</a>
+            <a href="/bounty/{{ b.bounty_id }}/submission" class="btn btn-primary"
+               style="padding:3px 8px;font-size:11px;">Submit</a>
             {% endif %}
           </div>
         </td>
@@ -95,12 +104,6 @@
       {% endfor %}
     </tbody>
   </table>
-
-  {% else %}
-  <div style="padding: 48px; text-align: center; color: var(--muted); font-family: var(--mono); font-size: 13px;">
-    No bounties yet.<br>
-    <a href="/intake" style="color: var(--accent); text-decoration: none;">Paste a bounty to get started →</a>
-  </div>
   {% endif %}
 </div>
 {% endblock %}

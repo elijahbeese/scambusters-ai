@@ -1,0 +1,165 @@
+{% extends "base.html" %}
+{% block title %}Blockchain — {{ bounty.domain }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Blockchain Analysis</h1>
+    <div class="page-subtitle">{{ bounty.domain }} · {{ bounty.bounty_id }}</div>
+  </div>
+  <div style="display:flex;gap:8px;">
+    <a href="/bounty/{{ bounty.bounty_id }}" class="btn btn-ghost">← Bounty</a>
+    <a href="/bounty/{{ bounty.bounty_id }}/report" class="btn btn-ghost">Report</a>
+  </div>
+</div>
+
+{% if not investigation %}
+<div class="alert alert-warn">No investigation data. Run the pipeline first.</div>
+{% else %}
+
+<!-- Total stolen -->
+{% set total_usd = blockchain.get('total_usd', 0) if blockchain else 0 %}
+<div class="card" style="margin-bottom:16px;">
+  <div style="display:flex;align-items:center;gap:32px;flex-wrap:wrap;">
+    <div>
+      <div style="font-family:var(--mono);font-size:36px;font-weight:600;
+                  color:{% if total_usd > 100000 %}var(--danger){% elif total_usd > 10000 %}var(--warn){% else %}var(--accent){% endif %};">
+        ${{ "{:,.2f}".format(total_usd) }}
+      </div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);
+                  text-transform:uppercase;letter-spacing:0.1em;margin-top:4px;">
+        Total victim losses traced on-chain
+      </div>
+    </div>
+    <div>
+      <div style="font-family:var(--mono);font-size:28px;font-weight:600;color:var(--warn);">
+        {{ blockchain.get('wallet_count', 0) if blockchain else 0 }}
+      </div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);
+                  text-transform:uppercase;letter-spacing:0.1em;margin-top:4px;">
+        Wallet addresses
+      </div>
+    </div>
+    {% if wallets %}
+    <div>
+      <div style="font-family:var(--mono);font-size:28px;font-weight:600;color:var(--danger);">
+        {{ wallets | selectattr('is_active') | list | length }}
+      </div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);
+                  text-transform:uppercase;letter-spacing:0.1em;margin-top:4px;">
+        Still active
+      </div>
+    </div>
+    {% endif %}
+  </div>
+</div>
+
+<!-- Wallet detail from DB -->
+{% if wallets %}
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Wallet Addresses — On-Chain Data</span>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>Currency</th>
+        <th>Address</th>
+        <th>TX Count</th>
+        <th>Total Received</th>
+        <th>USD Value</th>
+        <th>Status</th>
+        <th>Explorer</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for w in wallets %}
+      <tr>
+        <td style="color:var(--warn);font-weight:500;">{{ w.currency | upper }}</td>
+        <td class="mono" style="font-size:11px;color:var(--text);max-width:200px;
+            overflow:hidden;text-overflow:ellipsis;white-space:nowrap;" title="{{ w.address }}">
+          {{ w.address }}
+        </td>
+        <td class="mono">{{ w.tx_count or 0 }}</td>
+        <td class="mono">{{ "{:,.4f}".format(w.total_received or 0) }}</td>
+        <td class="mono" style="color:{% if (w.total_received_usd or 0) > 10000 %}var(--danger){% else %}var(--accent){% endif %};">
+          ${{ "{:,.2f}".format(w.total_received_usd or 0) }}
+        </td>
+        <td>
+          {% if w.is_active %}
+          <span class="badge badge-high">Active</span>
+          {% else %}
+          <span class="badge badge-pending">Inactive</span>
+          {% endif %}
+        </td>
+        <td>
+          {% if w.raw_data and w.raw_data.get('explorer_url') %}
+          <a href="{{ w.raw_data.explorer_url }}" target="_blank"
+             class="btn btn-ghost" style="padding:3px 8px;font-size:11px;">
+            View →
+          </a>
+          {% else %}—{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+
+{% else %}
+
+<!-- Wallets from pipeline JSON if DB wallets not available -->
+{% if blockchain and blockchain.get('by_currency') %}
+<div class="card">
+  <div class="card-header">
+    <span class="card-title">Wallet Addresses</span>
+  </div>
+  {% for currency, wallet_list in blockchain.by_currency.items() %}
+  {% for w in wallet_list %}
+  {% if not w.get('error') %}
+  <div style="background:var(--bg3);border:1px solid var(--border);border-radius:4px;
+              padding:14px;margin-bottom:10px;">
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;
+                flex-wrap:wrap;gap:8px;">
+      <div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--warn);
+                    font-weight:600;margin-bottom:4px;">{{ currency | upper }}</div>
+        <div style="font-family:var(--mono);font-size:12px;color:var(--text);
+                    word-break:break-all;">{{ w.address }}</div>
+      </div>
+      <div style="text-align:right;">
+        <div style="font-family:var(--mono);font-size:20px;font-weight:600;
+                    color:{% if (w.total_received_usd or 0) > 10000 %}var(--danger){% else %}var(--accent){% endif %};">
+          ${{ "{:,.2f}".format(w.total_received_usd or 0) }}
+        </div>
+        <div style="font-family:var(--mono);font-size:11px;color:var(--muted);">
+          {{ w.tx_count or 0 }} transactions
+        </div>
+      </div>
+    </div>
+    {% if w.get('explorer_url') %}
+    <div style="margin-top:8px;">
+      <a href="{{ w.explorer_url }}" target="_blank"
+         style="font-family:var(--mono);font-size:11px;color:var(--accent2);text-decoration:none;">
+        View on blockchain explorer →
+      </a>
+    </div>
+    {% endif %}
+  </div>
+  {% endif %}
+  {% endfor %}
+  {% endfor %}
+</div>
+{% else %}
+<div class="card">
+  <div style="padding:32px;text-align:center;color:var(--muted);
+              font-family:var(--mono);font-size:13px;">
+    No wallet addresses identified.<br>
+    <span style="font-size:11px;">Manual deposit page inspection required — create fake account on scam site, navigate to deposit page, harvest addresses.</span>
+  </div>
+</div>
+{% endif %}
+{% endif %}
+
+{% endif %}
+{% endblock %}

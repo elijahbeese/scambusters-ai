@@ -1,0 +1,208 @@
+{% extends "base.html" %}
+{% block title %}LE Package — {{ bounty.domain }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Law Enforcement Package</h1>
+    <div class="page-subtitle">{{ bounty.domain }} · IC3-formatted referral</div>
+  </div>
+  <div style="display:flex;gap:8px;">
+    <a href="/bounty/{{ bounty.bounty_id }}" class="btn btn-ghost">← Bounty</a>
+    <a href="/bounty/{{ bounty.bounty_id }}/submission" class="btn btn-primary">I4G Submission →</a>
+  </div>
+</div>
+
+{% if not le_package %}
+<div class="alert alert-warn">LE package not generated yet. Complete the investigation pipeline first.</div>
+{% else %}
+
+{% set meta  = le_package.get('package_metadata', {}) %}
+{% set subj  = le_package.get('subject', {}) %}
+{% set infra = le_package.get('infrastructure', {}) %}
+{% set reg   = le_package.get('registration', {}) %}
+{% set fin   = le_package.get('financial_evidence', {}) %}
+{% set net   = le_package.get('network_intel', {}) %}
+{% set soc   = le_package.get('social_media', {}) %}
+{% set ti    = le_package.get('threat_intelligence', {}) %}
+
+<!-- Package header -->
+<div class="card" style="margin-bottom:16px;border-color:var(--accent2);">
+  <div style="display:flex;justify-content:space-between;align-items:flex-start;flex-wrap:wrap;gap:12px;">
+    <div>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);
+                  text-transform:uppercase;letter-spacing:0.1em;margin-bottom:4px;">
+        Package Metadata
+      </div>
+      <div style="font-family:var(--mono);font-size:13px;color:var(--text);">
+        Generated: {{ meta.get('generated_at', '—')[:19] }}<br>
+        Tool: {{ meta.get('generated_by', '—') }}<br>
+        Bounty: {{ meta.get('i4g_bounty_id', '—') }}
+      </div>
+    </div>
+    <div style="text-align:right;">
+      <span class="risk risk-{{ subj.get('risk_level', 'unknown') }}" style="font-size:13px;">
+        {{ subj.get('risk_level', '—') }} ({{ subj.get('risk_score', 0) }}/100)
+      </span>
+      <div style="font-family:var(--mono);font-size:11px;color:var(--muted);margin-top:6px;">
+        {{ subj.get('classification', '—') }}
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Three column grid -->
+<div class="grid-2" style="margin-bottom:16px;">
+
+  <div class="card">
+    <div class="card-header"><span class="card-title">Infrastructure</span></div>
+    <div class="kv-row"><span class="kv-label">Primary IP</span>
+      <span class="kv-value">{{ infra.get('primary_ip', '—') }}</span></div>
+    <div class="kv-row"><span class="kv-label">ASN / Hosting</span>
+      <span class="kv-value">{{ infra.get('asn', '—') }}</span></div>
+    <div class="kv-row"><span class="kv-label">Country</span>
+      <span class="kv-value">{{ infra.get('hosting_country', '—') }}</span></div>
+    <div class="kv-row"><span class="kv-label">Server</span>
+      <span class="kv-value">{{ infra.get('server', '—') }}</span></div>
+    {% if infra.get('urlscan_report') %}
+    <div class="kv-row"><span class="kv-label">URLScan</span>
+      <span class="kv-value">
+        <a href="{{ infra.urlscan_report }}" target="_blank"
+           style="color:var(--accent);text-decoration:none;">View Report →</a>
+      </span></div>
+    {% endif %}
+    {% if infra.get('screenshot') %}
+    <div style="margin-top:10px;">
+      <img src="{{ infra.screenshot }}" alt="Site screenshot"
+           style="width:100%;border-radius:4px;border:1px solid var(--border);">
+    </div>
+    {% endif %}
+  </div>
+
+  <div class="card">
+    <div class="card-header"><span class="card-title">Registration</span></div>
+    <div class="kv-row"><span class="kv-label">Registrar</span>
+      <span class="kv-value" style="font-size:11px;">{{ reg.get('registrar', '—') }}</span></div>
+    <div class="kv-row"><span class="kv-label">Created</span>
+      <span class="kv-value">{{ reg.get('creation_date', '—') }}</span></div>
+    <div class="kv-row"><span class="kv-label">Expires</span>
+      <span class="kv-value">{{ reg.get('expiration_date', '—') }}</span></div>
+    <div class="kv-row"><span class="kv-label">Abuse Email</span>
+      <span class="kv-value" style="color:var(--accent);">{{ reg.get('abuse_email', '—') }}</span></div>
+    <div class="kv-row"><span class="kv-label">SOA Email</span>
+      <span class="kv-value" style="color:var(--warn);">{{ reg.get('soa_email', '—') }}</span></div>
+    <div class="kv-row"><span class="kv-label">Name Servers</span>
+      <span class="kv-value" style="font-size:11px;">{{ reg.get('name_servers', []) | join(', ') }}</span></div>
+  </div>
+
+</div>
+
+<!-- Financial evidence -->
+<div class="card" style="margin-bottom:16px;">
+  <div class="card-header">
+    <span class="card-title">Financial Evidence</span>
+    <span style="font-family:var(--mono);font-size:18px;font-weight:600;
+                 color:{% if fin.get('total_victim_losses_usd',0) > 0 %}var(--danger){% else %}var(--muted){% endif %};">
+      ${{ "{:,.2f}".format(fin.get('total_victim_losses_usd', 0)) }} traced
+    </span>
+  </div>
+
+  {% if fin.get('wallets') %}
+  <table>
+    <thead>
+      <tr><th>Currency</th><th>Address</th><th>TXs</th><th>USD Received</th><th>Active</th></tr>
+    </thead>
+    <tbody>
+      {% for w in fin.wallets %}
+      <tr>
+        <td style="color:var(--warn);">{{ w.currency }}</td>
+        <td class="mono" style="font-size:10px;word-break:break-all;">{{ w.address }}</td>
+        <td class="mono">{{ w.tx_count }}</td>
+        <td class="mono" style="color:var(--accent);">${{ "{:,.2f}".format(w.total_received_usd or 0) }}</td>
+        <td>
+          {% if w.is_active %}<span class="badge badge-high">Yes</span>
+          {% else %}<span style="color:var(--muted);">No</span>{% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <div style="color:var(--muted);font-family:var(--mono);font-size:12px;padding:12px 0;">
+    No wallet addresses identified. Manual deposit page inspection required.
+  </div>
+  {% endif %}
+</div>
+
+<!-- Network scope -->
+<div class="card" style="margin-bottom:16px;">
+  <div class="card-header">
+    <span class="card-title">Network Scope</span>
+    <span style="font-family:var(--mono);font-size:12px;color:var(--muted);">
+      {{ net.get('linked_domain_count', 0) }} linked · {{ net.get('clone_count', 0) }} clones · {{ net.get('soa_cluster_size', 0) }} SOA cluster
+    </span>
+  </div>
+  {% if net.get('linked_domains') %}
+  <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">
+    {% for d in net.linked_domains[:30] %}
+    <span style="font-family:var(--mono);font-size:11px;background:var(--bg3);
+                 border:1px solid var(--border);border-radius:3px;padding:2px 8px;
+                 color:var(--text);">{{ d }}</span>
+    {% endfor %}
+    {% if net.linked_domains | length > 30 %}
+    <span style="font-family:var(--mono);font-size:11px;color:var(--muted);">
+      +{{ net.linked_domains | length - 30 }} more
+    </span>
+    {% endif %}
+  </div>
+  {% else %}
+  <div style="color:var(--muted);font-family:var(--mono);font-size:12px;padding:8px 0;">
+    No linked domains identified.
+  </div>
+  {% endif %}
+  {% if net.get('threat_actor_note') %}
+  <div style="margin-top:12px;padding:10px;background:rgba(255,140,0,0.07);
+              border:1px solid rgba(255,140,0,0.2);border-radius:4px;
+              font-family:var(--mono);font-size:12px;color:var(--warn);">
+    {{ net.threat_actor_note }}
+  </div>
+  {% endif %}
+</div>
+
+<!-- IC3 Narrative -->
+{% if le_package.get('ic3_narrative') %}
+<div class="card" style="margin-bottom:16px;">
+  <div class="card-header">
+    <span class="card-title">IC3 Complaint Narrative</span>
+    <button onclick="copyNarrative()" class="btn btn-ghost" style="font-size:11px;">Copy</button>
+  </div>
+  <div id="ic3-narrative" style="font-size:13px;line-height:1.8;color:var(--text);
+              white-space:pre-wrap;font-family:var(--sans);">{{ le_package.ic3_narrative }}</div>
+</div>
+{% endif %}
+
+<!-- Recommended actions -->
+{% if le_package.get('recommended_actions') %}
+<div class="card">
+  <div class="card-header"><span class="card-title">Recommended Actions</span></div>
+  {% for action in le_package.recommended_actions %}
+  <div style="display:flex;align-items:flex-start;gap:10px;padding:8px 0;
+              border-bottom:1px solid var(--border);font-family:var(--mono);font-size:12px;">
+    <span style="color:var(--accent);min-width:20px;">{{ loop.index }}.</span>
+    <span style="color:var(--text);">{{ action }}</span>
+  </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+{% endif %}
+
+<script>
+function copyNarrative() {
+  const text = document.getElementById('ic3-narrative').innerText;
+  navigator.clipboard.writeText(text).then(() => {
+    alert('IC3 narrative copied to clipboard.');
+  });
+}
+</script>
+{% endblock %}

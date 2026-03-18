@@ -1,0 +1,145 @@
+{% extends "base.html" %}
+{% block title %}Network Graph — {{ bounty.domain }}{% endblock %}
+
+{% block content %}
+<div class="page-header">
+  <div>
+    <h1>Network Graph</h1>
+    <div class="page-subtitle">{{ bounty.domain }} — infrastructure connections</div>
+  </div>
+  <a href="/bounty/{{ bounty.bounty_id }}" class="btn btn-ghost">← Bounty</a>
+</div>
+
+<div style="background:var(--bg2);border:1px solid var(--border);border-radius:8px;
+            overflow:hidden;margin-bottom:20px;">
+  <div style="padding:14px 20px;border-bottom:1px solid var(--border);
+              display:flex;align-items:center;justify-content:space-between;">
+    <div style="font-family:var(--mono);font-size:11px;color:var(--muted);">
+      Drag nodes · Scroll to zoom · Click to inspect
+    </div>
+    <div style="display:flex;gap:16px;font-family:var(--mono);font-size:11px;color:var(--muted);">
+      <span><span style="color:#00d4aa">●</span> Domain</span>
+      <span><span style="color:#0099ff">●</span> IP</span>
+      <span><span style="color:#ff8c00">●</span> Wallet</span>
+      <span><span style="color:#ff3b5c">●</span> Operator</span>
+      <span><span style="color:#9b6dff">●</span> ASN</span>
+    </div>
+  </div>
+  <svg id="graph-svg" style="width:100%;height:560px;display:block;"></svg>
+</div>
+
+<!-- Node inspector -->
+<div id="node-inspector" class="card" style="display:none;">
+  <div class="card-header">
+    <span class="card-title" id="inspector-title">Node Details</span>
+    <button onclick="document.getElementById('node-inspector').style.display='none'"
+            class="btn btn-ghost" style="font-size:11px;">Close</button>
+  </div>
+  <div id="inspector-body"></div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/d3/7.8.5/d3.min.js"></script>
+<script>
+const DOMAIN = "{{ bounty.domain }}";
+
+async function loadGraph() {
+  try {
+    const res = await fetch(`/api/graph/${DOMAIN}`);
+    if (!res.ok) throw new Error('No graph data');
+    const data = await res.json();
+    if (!data.nodes?.length) {
+      showEmpty();
+      return;
+    }
+    renderGraph(data);
+  } catch(e) {
+    showEmpty(e.message);
+  }
+}
+
+function showEmpty(msg) {
+  document.getElementById('graph-svg').innerHTML =
+    `<text x="50%" y="50%" text-anchor="middle" fill="#484f58"
+     font-family="IBM Plex Mono" font-size="13">
+      ${msg || 'No graph data — run investigation first'}
+    </text>`;
+}
+
+function renderGraph(data) {
+  const svg = d3.select('#graph-svg');
+  const w = document.getElementById('graph-svg').clientWidth;
+  const h = 560;
+  svg.selectAll('*').remove();
+
+  const sim = d3.forceSimulation(data.nodes)
+    .force('link', d3.forceLink(data.links || data.edges || [])
+      .id(d => d.id).distance(100))
+    .force('charge', d3.forceManyBody().strength(-200))
+    .force('center', d3.forceCenter(w/2, h/2))
+    .force('collision', d3.forceCollide(16));
+
+  const g = svg.append('g');
+  svg.call(d3.zoom().scaleExtent([0.2, 5])
+    .on('zoom', e => g.attr('transform', e.transform)));
+
+  const edges = data.links || data.edges || [];
+
+  const link = g.append('g').selectAll('line').data(edges).join('line')
+    .attr('stroke', d => d.color || '#1c2128')
+    .attr('stroke-width', d => Math.min(d.width || 1, 3))
+    .attr('stroke-opacity', 0.7);
+
+  const node = g.append('g').selectAll('circle').data(data.nodes).join('circle')
+    .attr('r', d => d.size || 7)
+    .attr('fill', d => d.color || '#00d4aa')
+    .attr('fill-opacity', 0.9)
+    .attr('stroke', '#07090c')
+    .attr('stroke-width', 1.5)
+    .style('cursor', 'pointer')
+    .on('click', (e, d) => showInspector(d))
+    .call(d3.drag()
+      .on('start', (e,d) => { if(!e.active) sim.alphaTarget(0.3).restart(); d.fx=d.x; d.fy=d.y; })
+      .on('drag',  (e,d) => { d.fx=e.x; d.fy=e.y; })
+      .on('end',   (e,d) => { if(!e.active) sim.alphaTarget(0); d.fx=null; d.fy=null; })
+    );
+
+  const label = g.append('g').selectAll('text').data(data.nodes).join('text')
+    .text(d => d.label || d.id)
+    .attr('font-size', '9px')
+    .attr('font-family', "'IBM Plex Mono', monospace")
+    .attr('fill', d => d.id === DOMAIN ? '#00d4aa' : '#484f58')
+    .attr('font-weight', d => d.id === DOMAIN ? '600' : '400')
+    .attr('dx', d => (d.size || 7) + 4)
+    .attr('dy', '0.35em')
+    .style('pointer-events', 'none');
+
+  node.append('title').text(d => `${d.type}: ${d.id}`);
+
+  sim.on('tick', () => {
+    link.attr('x1',d=>d.source.x).attr('y1',d=>d.source.y)
+        .attr('x2',d=>d.target.x).attr('y2',d=>d.target.y);
+    node.attr('cx',d=>d.x).attr('cy',d=>d.y);
+    label.attr('x',d=>d.x).attr('y',d=>d.y);
+  });
+}
+
+function showInspector(node) {
+  document.getElementById('node-inspector').style.display = 'block';
+  document.getElementById('inspector-title').textContent = `${node.type}: ${node.id}`;
+  document.getElementById('inspector-body').innerHTML = `
+    <div class="kv-row"><span class="kv-label">ID</span>
+      <span class="kv-value mono" style="word-break:break-all;">${node.id}</span></div>
+    <div class="kv-row"><span class="kv-label">Type</span>
+      <span class="kv-value">${node.type}</span></div>
+    <div class="kv-row"><span class="kv-label">Connections</span>
+      <span class="kv-value">${node.weight || 1}</span></div>
+    ${node.type === 'domain' ? `<div style="margin-top:8px;">
+      <a href="/api/domain/${node.id}" target="_blank" class="btn btn-ghost" style="font-size:11px;">
+        View Intel →
+      </a></div>` : ''}
+  `;
+}
+
+loadGraph();
+</script>
+{% endblock %}
