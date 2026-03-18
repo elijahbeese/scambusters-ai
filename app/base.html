@@ -1,0 +1,447 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>{% block title %}ScamBusters Agent{% endblock %}</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+
+  :root {
+    --bg:       #0a0c0f;
+    --bg2:      #111418;
+    --bg3:      #181c22;
+    --border:   #1e2530;
+    --border2:  #2a3340;
+    --text:     #c8d4e0;
+    --muted:    #5a6a7a;
+    --accent:   #00d4aa;
+    --accent2:  #0099ff;
+    --warn:     #ff8c00;
+    --danger:   #ff3b5c;
+    --success:  #00d4aa;
+    --purple:   #9b6dff;
+    --mono:     'IBM Plex Mono', monospace;
+    --sans:     'IBM Plex Sans', sans-serif;
+  }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--sans);
+    font-size: 14px;
+    line-height: 1.6;
+    min-height: 100vh;
+  }
+
+  /* ── Nav ── */
+  nav {
+    background: var(--bg2);
+    border-bottom: 1px solid var(--border);
+    padding: 0 24px;
+    display: flex;
+    align-items: center;
+    gap: 32px;
+    height: 52px;
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+
+  .nav-brand {
+    font-family: var(--mono);
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--accent);
+    text-decoration: none;
+    letter-spacing: 0.05em;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+
+  .nav-brand::before {
+    content: '>';
+    color: var(--muted);
+  }
+
+  nav a {
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 13px;
+    font-family: var(--mono);
+    transition: color 0.15s;
+  }
+
+  nav a:hover, nav a.active { color: var(--text); }
+
+  .nav-spacer { flex: 1; }
+
+  .nav-status {
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--muted);
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  .dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    animation: pulse 2s infinite;
+  }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.3; }
+  }
+
+  /* ── Layout ── */
+  .container { max-width: 1200px; margin: 0 auto; padding: 24px; }
+
+  /* ── Cards ── */
+  .card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 20px;
+    margin-bottom: 16px;
+  }
+
+  .card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 16px;
+    padding-bottom: 12px;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .card-title {
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+  }
+
+  /* ── Badges ── */
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 2px 8px;
+    border-radius: 3px;
+    font-family: var(--mono);
+    font-size: 11px;
+    font-weight: 500;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .badge-pending     { background: #1a1f2e; color: #5a6a8a; border: 1px solid #1e2a3e; }
+  .badge-investigating { background: #1a2a1a; color: var(--warn); border: 1px solid #2a3a1a; }
+  .badge-complete    { background: #0d2020; color: var(--accent); border: 1px solid #0d3030; }
+  .badge-approved    { background: #0d1a2a; color: var(--accent2); border: 1px solid #0d2a3a; }
+  .badge-high        { background: #2a1010; color: var(--danger); border: 1px solid #3a1010; }
+
+  /* ── Buttons ── */
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 7px 14px;
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 12px;
+    font-weight: 500;
+    cursor: pointer;
+    border: 1px solid transparent;
+    transition: all 0.15s;
+    text-decoration: none;
+  }
+
+  .btn-primary {
+    background: var(--accent);
+    color: #000;
+    border-color: var(--accent);
+  }
+  .btn-primary:hover { background: #00b899; }
+
+  .btn-secondary {
+    background: transparent;
+    color: var(--text);
+    border-color: var(--border2);
+  }
+  .btn-secondary:hover { border-color: var(--text); }
+
+  .btn-danger {
+    background: transparent;
+    color: var(--danger);
+    border-color: var(--danger);
+  }
+  .btn-danger:hover { background: rgba(255,59,92,0.1); }
+
+  .btn-ghost {
+    background: transparent;
+    color: var(--muted);
+    border-color: transparent;
+  }
+  .btn-ghost:hover { color: var(--text); }
+
+  /* ── Tables ── */
+  table { width: 100%; border-collapse: collapse; }
+  th {
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    padding: 8px 12px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  td {
+    padding: 10px 12px;
+    border-bottom: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  tr:hover td { background: var(--bg3); }
+
+  /* ── Code/mono blocks ── */
+  .mono {
+    font-family: var(--mono);
+    font-size: 12px;
+    color: var(--accent);
+  }
+
+  pre {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 16px;
+    font-family: var(--mono);
+    font-size: 12px;
+    overflow-x: auto;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  /* ── Form elements ── */
+  textarea, input[type="text"] {
+    width: 100%;
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    color: var(--text);
+    font-family: var(--mono);
+    font-size: 13px;
+    padding: 12px;
+    resize: vertical;
+    transition: border-color 0.15s;
+  }
+  textarea:focus, input:focus {
+    outline: none;
+    border-color: var(--accent);
+  }
+
+  label {
+    display: block;
+    font-family: var(--mono);
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: var(--muted);
+    margin-bottom: 6px;
+  }
+
+  .form-group { margin-bottom: 16px; }
+
+  /* ── Stats grid ── */
+  .stats-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    margin-bottom: 24px;
+  }
+
+  .stat-card {
+    background: var(--bg2);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 16px;
+  }
+
+  .stat-value {
+    font-family: var(--mono);
+    font-size: 28px;
+    font-weight: 600;
+    color: var(--accent);
+    line-height: 1;
+  }
+
+  .stat-label {
+    font-family: var(--mono);
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.1em;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+
+  /* ── Alerts ── */
+  .alert {
+    padding: 12px 16px;
+    border-radius: 4px;
+    font-family: var(--mono);
+    font-size: 12px;
+    margin-bottom: 16px;
+  }
+  .alert-error { background: #1a0810; border: 1px solid var(--danger); color: var(--danger); }
+  .alert-success { background: #081a12; border: 1px solid var(--accent); color: var(--accent); }
+  .alert-warn { background: #1a1208; border: 1px solid var(--warn); color: var(--warn); }
+
+  /* ── Page header ── */
+  .page-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    margin-bottom: 24px;
+    gap: 16px;
+  }
+
+  h1 {
+    font-family: var(--mono);
+    font-size: 18px;
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  h2 {
+    font-family: var(--mono);
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text);
+    margin-bottom: 12px;
+  }
+
+  .page-subtitle {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+
+  /* ── Progress log ── */
+  .progress-log {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 16px;
+    font-family: var(--mono);
+    font-size: 12px;
+    max-height: 300px;
+    overflow-y: auto;
+  }
+
+  .log-entry {
+    display: flex;
+    gap: 12px;
+    padding: 3px 0;
+  }
+
+  .log-ts { color: var(--muted); min-width: 60px; }
+  .log-stage { color: var(--accent2); min-width: 100px; }
+  .log-msg { color: var(--text); }
+  .log-entry.error .log-msg { color: var(--danger); }
+  .log-entry.done .log-msg { color: var(--accent); }
+
+  /* ── Intel sections ── */
+  .intel-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+  }
+
+  @media (max-width: 768px) {
+    .intel-grid { grid-template-columns: 1fr; }
+  }
+
+  .intel-row {
+    display: flex;
+    gap: 8px;
+    padding: 6px 0;
+    border-bottom: 1px solid var(--border);
+    font-family: var(--mono);
+    font-size: 12px;
+  }
+  .intel-row:last-child { border-bottom: none; }
+  .intel-key { color: var(--muted); min-width: 160px; flex-shrink: 0; }
+  .intel-val { color: var(--text); word-break: break-all; }
+  .intel-val.highlight { color: var(--accent); }
+  .intel-val.warn { color: var(--warn); }
+  .intel-val.danger { color: var(--danger); }
+
+  /* ── Wallet tags ── */
+  .wallet-list { display: flex; flex-direction: column; gap: 4px; }
+  .wallet-entry {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 6px 10px;
+    font-family: var(--mono);
+    font-size: 11px;
+    display: flex;
+    gap: 8px;
+    align-items: center;
+  }
+  .wallet-currency {
+    color: var(--warn);
+    font-weight: 600;
+    min-width: 60px;
+    text-transform: uppercase;
+  }
+  .wallet-addr { color: var(--text); word-break: break-all; }
+
+  /* ── Domain pills ── */
+  .domain-pills { display: flex; flex-wrap: wrap; gap: 6px; }
+  .domain-pill {
+    background: var(--bg3);
+    border: 1px solid var(--border);
+    border-radius: 3px;
+    padding: 3px 8px;
+    font-family: var(--mono);
+    font-size: 11px;
+    color: var(--accent2);
+  }
+
+  /* ── Scrollbar ── */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--border2); border-radius: 3px; }
+</style>
+</head>
+<body>
+
+<nav>
+  <a class="nav-brand" href="/">SCAMBUSTERS AGENT</a>
+  <a href="/" {% if request.path == '/' %}class="active"{% endif %}>bounties</a>
+  <a href="/intake" {% if request.path == '/intake' %}class="active"{% endif %}>+ new bounty</a>
+  <div class="nav-spacer"></div>
+  <div class="nav-status">
+    <div class="dot"></div>
+    v1.0 · I4G
+  </div>
+</nav>
+
+<div class="container">
+  {% block content %}{% endblock %}
+</div>
+
+</body>
+</html>
