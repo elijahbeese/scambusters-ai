@@ -126,6 +126,10 @@ def extract_wallets_from_text(text: str) -> dict:
                 continue
             if currency == "LTC" and addr.isalpha():
                 continue
+            # SOL: reject pure hex strings (only 0-9 and a-f)
+            # Real Solana addresses use full base58 — must have chars outside hex range
+            if currency == "SOL" and not re.search(r'[g-zG-Z]', addr):
+                continue
             valid.append(addr)
         if valid:
             wallets[currency] = valid

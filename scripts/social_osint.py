@@ -32,7 +32,7 @@ WALLET_PATTERNS = {
     "BNB":        r"\b(bnb1[a-zA-Z0-9]{38})\b",
     "DOGE":       r"\b(D[a-zA-Z0-9]{25,34})\b",
     "TRX":        r"\b(T[A-Za-z0-9]{33})\b",
-    "SOL": r"\b([1-9A-HJ-NP-Za-km-z]{43,44})\b",
+    "SOL":        r"\b([1-9A-HJ-NP-Za-km-z]{43,44})\b",
 }
 
 # ── Phone patterns ────────────────────────────────────────────────────────────
@@ -133,15 +133,19 @@ def extract_wallets(html: str) -> dict:
     for currency, pattern in WALLET_PATTERNS.items():
         matches = re.findall(pattern, html)
         if matches:
-            # Filter out obvious false positives
             valid = []
             for addr in set(matches):
-                # Skip very common false positive patterns
                 if len(addr) < 25:
                     continue
                 if addr.startswith("0x000000"):
                     continue
                 if addr == "0x" + "0" * 40:
+                    continue
+                # SOL: reject pure hex strings — real SOL addresses use full base58
+                if currency == "SOL" and not re.search(r'[g-zG-Z]', addr):
+                    continue
+                # BTC: reject MD5-style lowercase hex hashes
+                if currency == "BTC" and re.match(r'^[0-9a-f]{32,}$', addr):
                     continue
                 valid.append(addr)
             if valid:
