@@ -94,6 +94,33 @@ def run_investigation(bounty: dict, progress_callback=None) -> dict:
              f"{wallets_found} wallets | {phones_found} phones | "
              f"{emails_found} emails | {pages_scraped} pages scraped")
 
+    # Stage 4.5: Headless wallet harvesting
+    progress("harvester", "Launching headless browser to extract deposit wallets...")
+    try:
+        from scripts.wallet_harvester import harvest_wallets_sync
+        harvest_result = harvest_wallets_sync(domain, OUTPUT_DIR)
+        harvested_wallets = harvest_result.get("wallets", {})
+
+        # Merge harvested wallets into social_osint wallets
+        existing_wallets = results["social_osint"].get("wallets_from_html", {})
+        for currency, addresses in harvested_wallets.items():
+            if currency not in existing_wallets:
+                existing_wallets[currency] = []
+            for addr in addresses:
+                if addr not in existing_wallets[currency]:
+                    existing_wallets[currency].append(addr)
+        results["social_osint"]["wallets_from_html"] = existing_wallets
+        results["wallet_harvest"] = harvest_result
+
+        total_harvested = harvest_result.get("wallet_count", 0)
+        total_usd_harvested = harvest_result.get("total_usd", 0)
+        progress("harvester",
+                 f"{total_harvested} wallets | ${total_usd_harvested:,.2f} traced | "
+                 f"registration: {'yes' if harvest_result.get('registration_attempted') else 'no'} | "
+                 f"{len(harvest_result.get('screenshots', []))} screenshots")
+    except Exception as e:
+        progress("harvester", f"Harvester skipped: {e}")
+
     # Stage 5: Certificate OSINT
     progress("cert_osint", "Running crt.sh + VirusTotal + Shodan...")
     cert_data = run_cert_osint(domain, ip=primary_ip)
@@ -111,13 +138,33 @@ def run_investigation(bounty: dict, progress_callback=None) -> dict:
     # Stage 6: Blockchain
     progress("blockchain", "Analyzing crypto wallet transaction history...")
     all_wallets = results["social_osint"].get("wallets_from_html", {})
-    if all_wallets:
+
+    # If harvester already ran blockchain analysis, use it
+    harvest_bc = (results.get("wallet_harvest") or {}).get("blockchain", {})
+    harvest_usd = (results.get("wallet_harvest") or {}).get("total_usd", 0)
+
+    if harvest_bc and harvest_usd > 0:
+        # Already analyzed — build blockchain_data from harvester results
+        blockchain_data = {
+            "by_currency": harvest_bc,
+            "total_usd":   harvest_usd,
+            "wallet_count": sum(len(v) for v in harvest_bc.values()),
+            "high_value":  harvest_usd > 10000,
+        }
+        results["blockchain"] = blockchain_data
+        progress("blockchain",
+                 f"${harvest_usd:,.2f} traced (from harvester) | "
+                 f"{blockchain_data['wallet_count']} wallets")
+        for currency, wallet_list in harvest_bc.items():
+            for w in wallet_list:
+                if isinstance(w, dict) and w.get("address"):
+                    upsert_wallet(domain, bounty_id, currency, w["address"], w)
+    elif all_wallets:
         blockchain_data = analyze_all_wallets(all_wallets)
         results["blockchain"] = blockchain_data
         total_usd    = blockchain_data.get("total_usd", 0)
         wallet_count = blockchain_data.get("wallet_count", 0)
-        progress("blockchain",
-                 f"${total_usd:,.2f} traced on-chain | {wallet_count} wallets")
+        progress("blockchain", f"${total_usd:,.2f} traced | {wallet_count} wallets")
         for currency, wallet_list in blockchain_data.get("by_currency", {}).items():
             for w in wallet_list:
                 if isinstance(w, dict) and w.get("address"):
@@ -125,9 +172,9 @@ def run_investigation(bounty: dict, progress_callback=None) -> dict:
     else:
         results["blockchain"] = {
             "total_usd": 0, "wallet_count": 0, "by_currency": {},
-            "note": "No wallets in HTML. Manual deposit page extraction required."
+            "note": "No wallets found. Manual deposit page extraction required."
         }
-        progress("blockchain", "No wallets in HTML — manual extraction needed")
+        progress("blockchain", "No wallets found")
 
     # Stage 7: AI Report
     progress("report", "Generating AI intelligence report (GPT-4o)...")
