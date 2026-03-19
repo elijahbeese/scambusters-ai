@@ -24,7 +24,7 @@ HEADERS = {
 
 # ── Wallet address patterns ───────────────────────────────────────────────────
 WALLET_PATTERNS = {
-    "BTC":        r"\b(bc1[a-zA-Z0-9]{25,62}|[13][a-zA-Z0-9]{25,34})\b",
+    "BTC":        r"\b(bc1[ac-hj-np-z02-9]{11,71}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})\b",
     "ETH":        r"\b(0x[a-fA-F0-9]{40})\b",
     "USDT_TRC20": r"\b(T[a-zA-Z0-9]{33})\b",
     "LTC":        r"\b([LM3][a-zA-Z0-9]{25,34}|ltc1[a-zA-Z0-9]{25,62})\b",

@@ -81,6 +81,47 @@ def run_investigation(bounty: dict, progress_callback=None) -> dict:
     progress("passive_dns",
              f"{linked} linked | {cluster} SOA cluster | {pivots} IP pivot domains")
 
+    # Stage 3.5: Auto-investigate top IP cluster domains
+    ip_pivot_domains = results["passive_dns"].get("ip_pivot_domains", [])
+    if ip_pivot_domains and len(ip_pivot_domains) > 0:
+        # Score and pick top 3 most scam-like domains from the cluster
+        scam_keywords = ["invest", "stake", "capital", "trade", "crypto", "earn",
+                         "fund", "profit", "wealth", "coin", "bitcoin", "finance",
+                         "yield", "mining", "asset", "signal", "broker"]
+        def cluster_score(d):
+            return sum(2 for kw in scam_keywords if kw in d.lower())
+        
+        top_cluster = sorted(ip_pivot_domains, key=cluster_score, reverse=True)[:3]
+        cluster_wallets_found = {}
+        
+        for cluster_domain in top_cluster:
+            try:
+                from scripts.wallet_harvester import harvest_wallets_sync
+                cluster_result = harvest_wallets_sync(cluster_domain, OUTPUT_DIR)
+                cluster_wallets = cluster_result.get("wallets", {})
+                if cluster_wallets:
+                    cluster_usd = cluster_result.get("total_usd", 0)
+                    progress("cluster", 
+                             f"{cluster_domain}: {sum(len(v) for v in cluster_wallets.values())} wallets | ${cluster_usd:,.2f}")
+                    for currency, addrs in cluster_wallets.items():
+                        if currency not in cluster_wallets_found:
+                            cluster_wallets_found[currency] = []
+                        cluster_wallets_found[currency].extend(
+                            a for a in addrs if a not in cluster_wallets_found.get(currency, [])
+                        )
+            except Exception:
+                continue
+        
+        if cluster_wallets_found:
+            results["cluster_wallets"] = cluster_wallets_found
+            existing = results.get("social_osint", {}).get("wallets_from_html", {})
+            for currency, addrs in cluster_wallets_found.items():
+                if currency not in existing:
+                    existing[currency] = []
+                for addr in addrs:
+                    if addr not in existing[currency]:
+                        existing[currency].append(addr)
+
     # Stage 4: Social OSINT
     progress("social_osint", "Deep-scraping site for social links, wallets, phones...")
     results["social_osint"] = run_social_osint(domain)
