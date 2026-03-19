@@ -449,6 +449,16 @@ async def _attempt_registration(page, base_url: str, identity: dict) -> bool:
 
             if has_error:
                 continue
+            
+            # Save credentials so we can reuse this account
+            import json as _json
+            creds_file = "outputs/registered_accounts.json"
+            try:
+                creds = _json.load(open(creds_file)) if os.path.exists(creds_file) else {}
+            except Exception:
+                creds = {}
+            creds[base_url] = {"email": identity["email"], "username": identity["username"], "password": identity["password"]}
+            _json.dump(creds, open(creds_file, "w"), indent=2)
 
             if await _check_logged_in(page):
                 print(f"  [harvester] Auto-logged in after registration")
@@ -601,6 +611,20 @@ async def harvest_wallets(domain: str, output_dir: str = "outputs") -> dict:
     print(f"\n  [harvester] v21 — {domain}")
     print(f"  [harvester] Identity: {identity['email']}")
     print(f"  [harvester] GPT-4o Vision: {'ENABLED' if OPENAI_API_KEY else 'DISABLED'}")
+
+    # Check for existing credentials
+    saved_creds = {}
+    try:
+        import json as _json
+        creds_file = "outputs/registered_accounts.json"
+        if os.path.exists(creds_file):
+            all_creds = _json.load(open(creds_file))
+            saved_creds = all_creds.get(f"https://{domain}", {})
+            if saved_creds:
+                print(f"  [harvester] Found saved credentials for {domain}")
+                identity.update(saved_creds)
+    except Exception:
+        pass
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
