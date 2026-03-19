@@ -50,7 +50,7 @@ def _get_gmail_verification_link(timeout: int = 90) -> str | None:
                             body += part.get_payload(decode=True).decode(errors="ignore")
                 else:
                     body = msg.get_payload(decode=True).decode(errors="ignore")
-                pattern = r'https?://[^\s"'<>]+(?:verif|confirm|activ|token|valid)[^\s"'<>]+'
+                pattern = r"https?://[^\s\"'<>]+(?:verif|confirm|activ|token|valid)[^\s\"'<>]+"
                 urls = re.findall(pattern, body)
                 if urls:
                     mail.logout()
