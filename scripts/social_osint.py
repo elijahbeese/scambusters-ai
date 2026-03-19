@@ -32,7 +32,7 @@ WALLET_PATTERNS = {
     "BNB":        r"\b(bnb1[a-zA-Z0-9]{38})\b",
     "DOGE":       r"\b(D[a-zA-Z0-9]{25,34})\b",
     "TRX":        r"\b(T[A-Za-z0-9]{33})\b",
-    "SOL":        r"\b([1-9A-HJ-NP-Za-km-z]{32,44})\b",
+    "SOL": r"\b([1-9A-HJ-NP-Za-km-z]{43,44})\b",
 }
 
 # ── Phone patterns ────────────────────────────────────────────────────────────
