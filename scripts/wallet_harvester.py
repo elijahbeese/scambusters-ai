@@ -1,12 +1,5 @@
 """
-wallet_harvester.py v21 — GPT-4o Vision Captcha Solving + Universal Form Engine
-
-Revolutionary features:
-1. GPT-4o Vision solves image captchas automatically
-2. Smart field scanner works on ANY site without hardcoded selectors
-3. Deposit form submission reveals hidden wallet addresses
-4. Full blockchain tracing on every wallet found
-5. Screenshot evidence at every stage
+wallet_harvester.py v21 — GPT-4o Vision Captcha + Email Verification + Universal Form Engine
 """
 
 import os
@@ -26,45 +19,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from dotenv import load_dotenv
 load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"))
 
-OPENAI_API_KEY    = os.getenv("OPENAI_API_KEY", "")
-ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
-
-
-def _create_guerrilla_session(username):
-    return username  # yopmail needs no session
-
-
-def _get_verification_link(username, sid_token, timeout=90):
-    """Poll yopmail inbox for verification link."""
-    import time
-    start = time.time()
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
-        "Accept": "text/html,application/xhtml+xml",
-    }
-    while time.time() - start < timeout:
-        try:
-            r = requests.get(
-                f"https://yopmail.com/en/inbox?login={username}&p=1&d=&ctrl=&scrl=&rnd=&yj=&yp=",
-                headers=headers, timeout=15
-            )
-            if r.status_code == 200:
-                # Find all links in inbox
-                links = re.findall(r'id="([^"]+)"[^>]*class="[^"]*lm[^"]*"', r.text)
-                for mail_id in links[:5]:
-                    r2 = requests.get(
-                        f"https://yopmail.com/en/mail?id={mail_id}&login={username}",
-                        headers=headers, timeout=15
-                    )
-                    if r2.status_code == 200:
-                        urls = re.findall(r"https?://[^\s\"'<>]+(?:verif|confirm|activ|token|valid)[^\s\"'<>]+", r2.text)
-                        if urls:
-                            return urls[0].rstrip('"').rstrip("'").rstrip("\\")
-        except Exception:
-            pass
-        time.sleep(8)
-    return None
-
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
 WALLET_PATTERNS = {
     "BTC":        r"\b(bc1[ac-hj-np-z02-9]{11,71}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})\b",
@@ -110,11 +65,9 @@ LOGIN_PATHS = [
 
 def generate_fake_identity() -> dict:
     first_names = ["James", "Michael", "Robert", "David", "John",
-                   "Sarah", "Emma", "Lisa", "Anna", "Maria",
-                   "Thomas", "William", "Daniel", "Christopher", "Joshua"]
+                   "Sarah", "Emma", "Lisa", "Anna", "Maria"]
     last_names  = ["Smith", "Johnson", "Williams", "Brown", "Jones",
-                   "Garcia", "Miller", "Davis", "Wilson", "Taylor",
-                   "Anderson", "Thomas", "Jackson", "White", "Harris"]
+                   "Garcia", "Miller", "Davis", "Wilson", "Taylor"]
     first    = random.choice(first_names)
     last     = random.choice(last_names)
     username = f"{first.lower()}{last.lower()}{random.randint(1000, 9999)}"
@@ -164,90 +117,39 @@ def _merge_wallets(target: dict, source: dict):
                 target[currency].append(addr)
 
 
-# ── GPT-4o Vision Captcha Solver ──────────────────────────────────────────────
-
-async def _solve_captcha_with_vision(page, base_url: str) -> str | None:
-    """
-    Download captcha image from page, send to GPT-4o Vision, return solution.
-    This is the key innovation — no captcha solving service needed.
-    """
-    if not OPENAI_API_KEY:
-        return None
-
-    try:
-        # Find captcha image on page
-        captcha_img = await page.query_selector(
-            "img.captcha-image, img[alt*='captcha' i], img[src*='captcha' i], "
-            "img[src*='secure' i], img[id*='captcha' i], img[class*='captcha' i]"
-        )
-        if not captcha_img:
-            return None
-
-        captcha_src = await captcha_img.get_attribute("src")
-        if not captcha_src:
-            return None
-
-        # Make absolute URL
-        if captcha_src.startswith("/"):
-            captcha_src = base_url + captcha_src
-        elif not captcha_src.startswith("http"):
-            captcha_src = base_url + "/" + captcha_src
-
-        # Download the captcha image
-        r = requests.get(captcha_src, timeout=10,
-                        headers={"User-Agent": "Mozilla/5.0"})
-        if r.status_code != 200:
-            return None
-
-        # Convert to base64
-        img_b64 = base64.b64encode(r.content).decode()
-        content_type = r.headers.get("content-type", "image/png").split(";")[0]
-
-        # Send to GPT-4o Vision
-        response = requests.post(
-            "https://api.openai.com/v1/chat/completions",
-            headers={"Authorization": f"Bearer {OPENAI_API_KEY}",
-                     "Content-Type": "application/json"},
-            json={
-                "model": "gpt-4o",
-                "max_tokens": 20,
-                "messages": [{
-                    "role": "user",
-                    "content": [
-                        {
-                            "type": "image_url",
-                            "image_url": {
-                                "url": f"data:{content_type};base64,{img_b64}",
-                                "detail": "high"
-                            }
-                        },
-                        {
-                            "type": "text",
-                            "text": "This is a CAPTCHA image. Read the text or numbers shown and return ONLY the captcha answer, nothing else. No explanation, just the characters."
-                        }
-                    ]
-                }]
-            },
-            timeout=30
-        )
-
-        if response.status_code == 200:
-            answer = response.json()["choices"][0]["message"]["content"].strip()
-            # Clean up common GPT responses
-            answer = re.sub(r'["\'\s]', '', answer)
-            print(f"  [harvester] GPT-4o solved captcha: '{answer}'")
-            return answer
-
-    except Exception as e:
-        print(f"  [harvester] Captcha solver error: {e}")
-
+def _get_yopmail_verification_link(username: str, timeout: int = 90) -> str | None:
+    """Poll yopmail inbox for a verification email and return the link."""
+    import time
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "text/html,application/xhtml+xml",
+    }
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            r = requests.get(
+                f"https://yopmail.com/en/inbox?login={username}&p=1",
+                headers=headers, timeout=15
+            )
+            if r.status_code == 200:
+                mail_ids = re.findall(r'id="(m_[^"]+)"', r.text)
+                for mail_id in mail_ids[:5]:
+                    r2 = requests.get(
+                        f"https://yopmail.com/en/mail?id={mail_id}&login={username}",
+                        headers=headers, timeout=15
+                    )
+                    if r2.status_code == 200:
+                        pattern = r'https?://[^\s"\'<>]+(?:verif|confirm|activ|token|valid)[^\s"\'<>]+'
+                        urls = re.findall(pattern, r2.text)
+                        if urls:
+                            return urls[0].rstrip('"').rstrip("'")
+        except Exception:
+            pass
+        time.sleep(8)
     return None
 
 
-# ── Universal Form Extraction ──────────────────────────────────────────────────
-
 async def _extract_wallets_from_page(page) -> dict:
-    """Extract wallets from all possible locations on a page."""
     wallets = {}
     try:
         content = await page.content()
@@ -263,7 +165,7 @@ async def _extract_wallets_from_page(page) -> dict:
     except Exception:
         pass
     try:
-        els = await page.query_selector_all("[data-clipboard-text], [data-copy], [data-value], [onclick*='copy']")
+        els = await page.query_selector_all("[data-clipboard-text], [data-copy], [data-value]")
         for el in els:
             for attr in ["data-clipboard-text", "data-copy", "data-value"]:
                 val = await el.get_attribute(attr) or ""
@@ -274,11 +176,58 @@ async def _extract_wallets_from_page(page) -> dict:
     return wallets
 
 
+async def _solve_captcha_with_vision(page, base_url: str) -> str | None:
+    if not OPENAI_API_KEY:
+        return None
+    try:
+        captcha_img = await page.query_selector(
+            "img.captcha-image, img[alt*='captcha' i], img[src*='captcha' i], "
+            "img[src*='secure' i], img[id*='captcha' i], img[class*='captcha' i]"
+        )
+        if not captcha_img:
+            return None
+        captcha_src = await captcha_img.get_attribute("src")
+        if not captcha_src:
+            return None
+        if captcha_src.startswith("/"):
+            captcha_src = base_url + captcha_src
+        elif not captcha_src.startswith("http"):
+            captcha_src = base_url + "/" + captcha_src
+        r = requests.get(captcha_src, timeout=10, headers={"User-Agent": "Mozilla/5.0"})
+        if r.status_code != 200:
+            return None
+        img_b64 = base64.b64encode(r.content).decode()
+        content_type = r.headers.get("content-type", "image/png").split(";")[0]
+        response = requests.post(
+            "https://api.openai.com/v1/chat/completions",
+            headers={"Authorization": f"Bearer {OPENAI_API_KEY}",
+                     "Content-Type": "application/json"},
+            json={
+                "model": "gpt-4o",
+                "max_tokens": 20,
+                "messages": [{
+                    "role": "user",
+                    "content": [
+                        {"type": "image_url",
+                         "image_url": {"url": f"data:{content_type};base64,{img_b64}", "detail": "high"}},
+                        {"type": "text",
+                         "text": "This is a CAPTCHA. Return ONLY the characters shown, nothing else."}
+                    ]
+                }]
+            },
+            timeout=30
+        )
+        if response.status_code == 200:
+            answer = response.json()["choices"][0]["message"]["content"].strip()
+            answer = re.sub(r'[\s"\'`]', '', answer)
+            print(f"  [harvester] GPT-4o captcha: '{answer}'")
+            return answer
+    except Exception as e:
+        print(f"  [harvester] Captcha error: {e}")
+    return None
+
+
 async def _scan_and_fill_form(page, identity: dict) -> int:
-    """
-    Scan ALL visible input fields and fill them intelligently.
-    No hardcoded selectors — works on ANY site.
-    """
     try:
         inputs = await page.query_selector_all(
             "input:not([type='hidden']):not([type='submit']):not([type='button']):not([type='image']), "
@@ -292,118 +241,68 @@ async def _scan_and_fill_form(page, identity: dict) -> int:
         try:
             if not await inp.is_visible():
                 continue
+            readonly = await inp.get_attribute("readonly")
+            if readonly is not None:
+                continue
 
             name        = (await inp.get_attribute("name") or "").lower()
             placeholder = (await inp.get_attribute("placeholder") or "").lower()
             itype       = (await inp.get_attribute("type") or "text").lower()
             id_attr     = (await inp.get_attribute("id") or "").lower()
-            readonly    = await inp.get_attribute("readonly")
-            
-            # Skip readonly fields
-            if readonly is not None:
-                continue
+            combined    = f"{name} {placeholder} {id_attr}"
+            value       = None
 
-            combined = f"{name} {placeholder} {id_attr}"
-            value = None
-
-            # Password
             if itype == "password":
                 value = identity["password"]
-
-            # Email
             elif itype == "email" or "email" in combined:
                 value = identity["email"]
-
-            # Full name (check before username to avoid false matches)
-            elif name in ("user_name", "fullname", "full_name", "name") or \
-                 ("full" in combined and "name" in combined) or \
+            elif name in ("user_name", "fullname", "full_name") or \
                  (placeholder in ("full name", "your name", "fullname")):
                 value = identity["full_name"]
-
-            # Username (careful: "uplineUserName" should NOT match)
-            elif (name in ("username", "user_username", "user_login", "login") or
-                  placeholder in ("username", "user name")) and \
+            elif name in ("user_username", "username", "user_login") and \
                  not any(kw in name for kw in ["upline", "refer", "sponsor"]):
                 value = identity["username"]
-
-            # First name
             elif any(kw in combined for kw in ["first_name", "firstname", "fname"]):
                 value = identity["first_name"]
-
-            # Last name
             elif any(kw in combined for kw in ["last_name", "lastname", "lname", "surname"]):
                 value = identity["last_name"]
-
-            # Phone
-            elif itype == "tel" or any(kw in combined for kw in ["phone", "mobile", "cell", "whatsapp"]):
+            elif itype == "tel" or any(kw in combined for kw in ["phone", "mobile"]):
                 value = identity["phone"]
-
-            # BTC wallet
-            elif any(kw in name for kw in ["wallet_btc", "btcwallet", "bitcoin_wallet"]) or \
-                 "bitcoin" in placeholder:
+            elif any(kw in name for kw in ["wallet_btc", "btcwallet"]) or "bitcoin" in placeholder:
                 value = identity["btc_wallet"]
-
-            # BCH wallet (use BTC address)
-            elif any(kw in name for kw in ["wallet_bch", "bchwallet"]) or \
-                 "bitcoincash" in placeholder:
+            elif any(kw in name for kw in ["wallet_bch"]) or "bitcoincash" in placeholder:
                 value = identity["btc_wallet"]
-
-            # USDT wallet
-            elif any(kw in name for kw in ["wallet_usdt", "usdtwallet"]) or \
-                 any(kw in placeholder for kw in ["usdt", "trc20", "tether"]):
+            elif any(kw in name for kw in ["wallet_usdt"]) or any(kw in placeholder for kw in ["usdt", "trc20"]):
                 value = identity["usdt_wallet"]
-
-            # ETH wallet
-            elif any(kw in name for kw in ["wallet_eth", "ethwallet", "ethereum_wallet"]) or \
-                 "ethereum" in placeholder:
+            elif any(kw in name for kw in ["wallet_eth"]) or "ethereum" in placeholder:
                 value = identity["eth_wallet"]
-
-            # LTC wallet
-            elif any(kw in name for kw in ["wallet_ltc", "ltcwallet"]) or \
-                 "litecoin" in placeholder:
+            elif any(kw in name for kw in ["wallet_ltc"]) or "litecoin" in placeholder:
                 value = identity["ltc_wallet"]
-
-            # Generic wallet field
-            elif "wallet" in combined and "address" in combined:
+            elif "wallet" in name and "address" in placeholder:
                 value = identity["btc_wallet"]
-
-            # Amount
             elif name == "amount" or "amount" in placeholder:
                 value = "50"
-
-            # Referral/upline (fill with empty)
-            elif any(kw in name for kw in ["upline", "referral", "ref", "sponsor", "refer"]):
+            elif any(kw in name for kw in ["upline", "referral", "ref", "sponsor"]):
                 value = ""
-
-            # Bot check / captcha text field — will be overwritten by vision solver
-            elif any(kw in name for kw in ["botcheck", "bot_check", "botCheck", "captcha"]) and \
-                 itype == "text":
-                value = str(random.randint(1000, 9999))  # placeholder, vision will override
+            elif any(kw in name for kw in ["botcheck", "botCheck", "captcha"]) and itype == "text":
+                value = str(random.randint(1000, 9999))
 
             if value is not None:
                 tag = await inp.evaluate("el => el.tagName.toLowerCase()")
                 if tag == "select":
-                    try:
-                        options = await inp.query_selector_all("option")
-                        for opt in options:
-                            opt_val = await opt.get_attribute("value") or ""
-                            if opt_val and opt_val not in ("0", "", "select", "none"):
-                                await inp.select_option(opt_val)
-                                filled += 1
-                                break
-                    except Exception:
-                        pass
+                    options = await inp.query_selector_all("option")
+                    for opt in options:
+                        opt_val = await opt.get_attribute("value") or ""
+                        if opt_val and opt_val not in ("0", "", "select", "none"):
+                            await inp.select_option(opt_val)
+                            filled += 1
+                            break
                 else:
-                    try:
-                        await inp.fill(str(value))
-                        filled += 1
-                    except Exception:
-                        pass
-
+                    await inp.fill(str(value))
+                    filled += 1
         except Exception:
             continue
 
-    # Check all checkboxes (ToS, agree, etc.)
     try:
         for cb in await page.query_selector_all('input[type="checkbox"]'):
             try:
@@ -418,7 +317,6 @@ async def _scan_and_fill_form(page, identity: dict) -> int:
 
 
 async def _submit_form(page) -> bool:
-    """Submit form using common button patterns."""
     selectors = [
         'button[type="submit"]', 'input[type="submit"]',
         'button:has-text("Register")', 'button:has-text("Sign Up")',
@@ -426,10 +324,9 @@ async def _submit_form(page) -> bool:
         'button:has-text("Login")', 'button:has-text("Sign In")',
         'button:has-text("Submit")', 'button:has-text("Continue")',
         'button:has-text("Make Deposit")', 'button:has-text("Deposit")',
-        'button:has-text("Invest")', 'button:has-text("Proceed")',
-        '.btn-primary', '.thm-btn', '.submit-btn', '#submit',
-        'button[class*="submit"]', 'button[class*="register"]',
-        'button[class*="login"]', 'a.btn[href="#"]',
+        'button:has-text("Invest")', '.btn-primary', '.thm-btn',
+        '.submit-btn', '#submit', 'button[class*="submit"]',
+        'button[class*="register"]', 'button[class*="login"]',
     ]
     for sel in selectors:
         try:
@@ -444,55 +341,39 @@ async def _submit_form(page) -> bool:
 
 
 async def _check_logged_in(page) -> bool:
-    """Verify authentication — requires logout link which ONLY appears when logged in."""
     try:
         content = await page.content()
         content_lower = content.lower()
         url = page.url.lower()
-        
-        # Must have a logout indicator
-        has_logout = any(kw in content_lower for kw in
-                         ["logout", "log out", "sign out", "signout"])
+        has_logout = any(kw in content_lower for kw in ["logout", "log out", "sign out", "signout"])
         if not has_logout:
             return False
-        
-        # URL or content confirms dashboard
         if any(kw in url for kw in ["dashboard", "account", "member", "portal"]):
             return True
-        
-        auth_signals = ["deposit", "withdraw", "balance", "investment", "portfolio", "my account"]
-        return sum(1 for kw in auth_signals if kw in content_lower) >= 2
+        signals = ["deposit", "withdraw", "balance", "investment", "portfolio", "my account"]
+        return sum(1 for kw in signals if kw in content_lower) >= 2
     except Exception:
         return False
 
 
 async def _attempt_registration(page, base_url: str, identity: dict) -> bool:
-    """Try all registration paths with smart field filling + vision captcha solving."""
     for path in REGISTER_PATHS:
         try:
-            r = await page.goto(base_url + path,
-                                wait_until="domcontentloaded", timeout=15000)
+            r = await page.goto(base_url + path, wait_until="domcontentloaded", timeout=15000)
             if not r or r.status in (404, 403, 500):
                 continue
-            
             content = await page.content()
             if "password" not in content.lower():
                 continue
 
-            # Fill all form fields
             filled = await _scan_and_fill_form(page, identity)
             if not filled:
                 continue
 
-            # Solve image captcha if present
             captcha_answer = await _solve_captcha_with_vision(page, base_url)
             if captcha_answer:
-                # Fill captcha field
-                for captcha_sel in [
-                    'input[name="botCheck"]', 'input[name="captcha"]',
-                    'input[id="captcha"]', 'input[class*="captcha"]',
-                    'input[placeholder*="captcha" i]',
-                ]:
+                for captcha_sel in ['input[name="botCheck"]', 'input[name="captcha"]',
+                                    'input[id="captcha"]', 'input[class*="captcha"]']:
                     try:
                         el = await page.query_selector(captcha_sel)
                         if el and await el.is_visible():
@@ -503,11 +384,9 @@ async def _attempt_registration(page, base_url: str, identity: dict) -> bool:
 
             await _submit_form(page)
             await page.wait_for_timeout(3000)
-            
+
             post_url = page.url
-            post_content = await page.content()
             has_error = "itts" in post_url.lower() or "/error" in post_url.lower()
-            
             print(f"  [harvester] Registration at {path} → {post_url} error={has_error}")
 
             if has_error:
@@ -517,37 +396,35 @@ async def _attempt_registration(page, base_url: str, identity: dict) -> bool:
                 print(f"  [harvester] Auto-logged in after registration")
                 return True
 
-            # Check if email verification required
-            post_content_lower = (await page.content()).lower()
-            needs_verify = any(kw in post_content_lower for kw in
-                              ["verify your email", "verification", "confirm your email",
-                               "check your email", "activate your account", "validate"])
+            # Check for email verification requirement
+            post_content = await page.content()
+            needs_verify = any(kw in post_content.lower() for kw in
+                               ["verify your email", "verification", "confirm your email",
+                                "check your email", "activate your account", "validate"])
             if needs_verify:
-                print(f"  [harvester] Email verification required — polling Guerrilla Mail...")
+                print(f"  [harvester] Email verification required — polling yopmail...")
                 uname = identity["email"].split("@")[0]
-                verify_url = _get_verification_link(uname, uname, timeout=90)
-                    if verify_url:
-                        print(f"  [harvester] Clicking verification link...")
-                        await page.goto(verify_url, wait_until="domcontentloaded", timeout=15000)
-                        await page.wait_for_timeout(2000)
-                        print(f"  [harvester] After verification: {page.url}")
+                verify_url = _get_yopmail_verification_link(uname, timeout=90)
+                if verify_url:
+                    print(f"  [harvester] Clicking verification link...")
+                    await page.goto(verify_url, wait_until="domcontentloaded", timeout=15000)
+                    await page.wait_for_timeout(2000)
+                    print(f"  [harvester] After verification: {page.url}")
+                else:
+                    print(f"  [harvester] No verification email received")
 
-            return True  # Registration attempted, proceed to login
-
+            return True
         except Exception:
             continue
     return False
 
 
 async def _attempt_login(page, base_url: str, identity: dict) -> bool:
-    """Try all login paths with smart field filling."""
     for path in LOGIN_PATHS:
         try:
-            r = await page.goto(base_url + path,
-                                wait_until="domcontentloaded", timeout=15000)
+            r = await page.goto(base_url + path, wait_until="domcontentloaded", timeout=15000)
             if not r or r.status in (404, 403, 500):
                 continue
-
             content = await page.content()
             if "password" not in content.lower():
                 continue
@@ -556,36 +433,44 @@ async def _attempt_login(page, base_url: str, identity: dict) -> bool:
             if not filled:
                 continue
 
+            captcha_answer = await _solve_captcha_with_vision(page, base_url)
+            if captcha_answer:
+                for captcha_sel in ['input[name="botCheck"]', 'input[name="captcha"]',
+                                    'input[id="captcha"]']:
+                    try:
+                        el = await page.query_selector(captcha_sel)
+                        if el and await el.is_visible():
+                            await el.fill(captcha_answer)
+                            break
+                    except Exception:
+                        continue
+
             await _submit_form(page)
             await page.wait_for_timeout(3000)
 
+            post_url = page.url
+            print(f"  [harvester] Login via {path} → {post_url}")
             if await _check_logged_in(page):
-                print(f"  [harvester] Login successful via {path}")
+                print(f"  [harvester] Login successful!")
                 return True
-
-        except Exception:
+        except Exception as e:
             continue
     return False
 
 
 async def _submit_deposit_form(page, base_url: str, output_dir: str, domain: str) -> dict:
-    """Submit deposit form to reveal wallet address."""
     wallets = {}
     for path in DEPOSIT_PATHS:
         try:
-            r = await page.goto(base_url + path,
-                                wait_until="domcontentloaded", timeout=15000)
+            r = await page.goto(base_url + path, wait_until="domcontentloaded", timeout=15000)
             if not r or r.status in (404, 403, 500):
                 continue
-
             await page.wait_for_timeout(2000)
             content = await page.content()
-
             if not any(kw in content.lower() for kw in
                        ["deposit", "invest", "plan", "amount", "payment", "bitcoin", "wallet"]):
                 continue
 
-            # Select plan
             try:
                 selects = await page.query_selector_all("select")
                 for sel in selects:
@@ -598,7 +483,6 @@ async def _submit_deposit_form(page, base_url: str, output_dir: str, domain: str
             except Exception:
                 pass
 
-            # Fill amount
             try:
                 for amt_sel in ['input[name="amount"]', 'input[placeholder*="amount" i]']:
                     amt = await page.query_selector(amt_sel)
@@ -608,7 +492,6 @@ async def _submit_deposit_form(page, base_url: str, output_dir: str, domain: str
             except Exception:
                 pass
 
-            # Select payment type — try known patterns then fallback to first radio
             payment_clicked = False
             for val in ["process_1000", "btc", "bitcoin", "1", "crypto"]:
                 try:
@@ -619,7 +502,7 @@ async def _submit_deposit_form(page, base_url: str, output_dir: str, domain: str
                         break
                 except Exception:
                     pass
-            
+
             if not payment_clicked:
                 try:
                     radios = await page.query_selector_all('input[type="radio"]')
@@ -635,15 +518,12 @@ async def _submit_deposit_form(page, base_url: str, output_dir: str, domain: str
             if wallets:
                 ss = f"{output_dir}/{domain.replace('.','_')}_deposit_reveal.png"
                 await page.screenshot(path=ss, full_page=True)
-                print(f"  [harvester] Deposit reveal → wallets found: {wallets}")
+                print(f"  [harvester] Deposit reveal → {wallets}")
                 return wallets
-
         except Exception:
             continue
     return wallets
 
-
-# ── Main Harvesting Engine ─────────────────────────────────────────────────────
 
 async def harvest_wallets(domain: str, output_dir: str = "outputs") -> dict:
     try:
@@ -663,9 +543,7 @@ async def harvest_wallets(domain: str, output_dir: str = "outputs") -> dict:
 
     print(f"\n  [harvester] v21 — {domain}")
     print(f"  [harvester] Identity: {identity['email']}")
-    
-    has_vision = bool(OPENAI_API_KEY)
-    print(f"  [harvester] GPT-4o Vision captcha solver: {'ENABLED' if has_vision else 'DISABLED'}")
+    print(f"  [harvester] GPT-4o Vision: {'ENABLED' if OPENAI_API_KEY else 'DISABLED'}")
 
     async with async_playwright() as p:
         browser = await p.chromium.launch(
@@ -692,7 +570,6 @@ async def harvest_wallets(domain: str, output_dir: str = "outputs") -> dict:
             print(f"  [harvester] Homepage loaded")
             if await _check_logged_in(page):
                 login_success = True
-                print(f"  [harvester] Already authenticated")
         except Exception as e:
             print(f"  [harvester] Homepage failed: {e}")
 
@@ -708,18 +585,17 @@ async def harvest_wallets(domain: str, output_dir: str = "outputs") -> dict:
                 else:
                     login_success = await _attempt_login(page, base_url, identity)
 
-        # Phase 3: Login if still needed
+        # Phase 3: Login if needed
         if not login_success:
             login_success = await _attempt_login(page, base_url, identity)
             if not login_success:
-                print(f"  [harvester] Could not authenticate — scanning public pages only")
+                print(f"  [harvester] Could not authenticate — public scan only")
 
         # Phase 4: Scan deposit paths
-        print(f"  [harvester] Scanning deposit paths (authenticated={login_success})...")
+        print(f"  [harvester] Scanning paths (auth={login_success})...")
         for path in DEPOSIT_PATHS:
             try:
-                r = await page.goto(base_url + path,
-                                    wait_until="domcontentloaded", timeout=15000)
+                r = await page.goto(base_url + path, wait_until="domcontentloaded", timeout=15000)
                 if not r or r.status in (404, 403, 500):
                     continue
                 await page.wait_for_timeout(2000)
@@ -731,22 +607,21 @@ async def harvest_wallets(domain: str, output_dir: str = "outputs") -> dict:
                     ss = f"{output_dir}/{domain.replace('.','_')}{path.replace('/','_').replace('?','_').replace('=','_')}.png"
                     await page.screenshot(path=ss, full_page=True)
                     screenshots.append(ss)
-                # QR detection
                 try:
                     qr = await page.query_selector_all("img[src*='qr' i], canvas[class*='qr' i]")
                     if qr:
                         ss = f"{output_dir}/{domain.replace('.','_')}{path.replace('/','_')}_qr.png"
                         await page.screenshot(path=ss, full_page=True)
                         screenshots.append(ss)
-                        print(f"  [harvester] QR code on {path}")
+                        print(f"  [harvester] QR on {path}")
                 except Exception:
                     pass
             except Exception:
                 continue
 
-        # Phase 5: Deposit form submission if no wallets yet
+        # Phase 5: Deposit form submission
         if login_success and not all_wallets:
-            print(f"  [harvester] Submitting deposit form to reveal wallet...")
+            print(f"  [harvester] Submitting deposit form...")
             try:
                 deposit_wallets = await _submit_deposit_form(page, base_url, output_dir, domain)
                 if deposit_wallets:
@@ -757,13 +632,13 @@ async def harvest_wallets(domain: str, output_dir: str = "outputs") -> dict:
         await browser.close()
 
     total = sum(len(v) for v in all_wallets.values())
-    print(f"  [harvester] Complete — {total} wallets, authenticated={login_success}")
+    print(f"  [harvester] Done — {total} wallets, auth={login_success}")
 
-    # Phase 6: Blockchain analysis
+    # Phase 6: Blockchain
     blockchain_results = {}
     total_usd = 0.0
     if all_wallets:
-        print(f"  [harvester] Tracing wallets on blockchain...")
+        print(f"  [harvester] Tracing on blockchain...")
         try:
             from scripts.blockchain import analyze_wallet
             for currency, addresses in all_wallets.items():
@@ -779,7 +654,7 @@ async def harvest_wallets(domain: str, output_dir: str = "outputs") -> dict:
             print(f"  [harvester] Blockchain error: {e}")
 
     if total_usd > 0:
-        print(f"  [harvester] TOTAL VICTIM LOSSES: ${total_usd:,.2f}")
+        print(f"  [harvester] TOTAL: ${total_usd:,.2f}")
 
     return {
         "wallets":                all_wallets,
