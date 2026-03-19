@@ -26,18 +26,134 @@ HEADERS = {"User-Agent": "ScamBusters-Agent/2.0 OSINT-Investigation"}
 # ── Bitcoin (Blockchair — free, no key) ──────────────────────────────────────
 
 def analyze_bitcoin(address: str) -> dict:
+    """
+    Query BTC transaction history.
+    Chain: blockchain.info (primary, free) → Blockchair (fallback) → mempool.space
+    """
+    # Primary: blockchain.info — free, no key, generous rate limits
+    result = _analyze_btc_blockchaininfo(address)
+    if "error" not in result:
+        return result
+
+    # Fallback 1: mempool.space — free, no key
+    result = _analyze_btc_mempool(address)
+    if "error" not in result:
+        return result
+
+    # Fallback 2: Blockchair
+    result = _analyze_btc_blockchair(address)
+    return result
+
+
+def _analyze_btc_blockchaininfo(address: str) -> dict:
+    """blockchain.info API — free, no key, high rate limit."""
+    try:
+        r = requests.get(
+            f"https://blockchain.info/rawaddr/{address}?limit=1",
+            headers=HEADERS, timeout=15
+        )
+        if r.status_code == 429:
+            return {"error": "blockchain.info rate limited"}
+        if r.status_code != 200:
+            return {"error": f"blockchain.info returned {r.status_code}"}
+
+        data = r.json()
+        received_sat = data.get("total_received", 0)
+        received_btc = received_sat / 1e8
+        price_usd    = _get_btc_price()
+        tx_count     = data.get("n_tx", 0)
+        txs          = data.get("txs", [])
+
+        first_seen = None
+        last_seen  = None
+        if txs:
+            ts = txs[0].get("time")
+            if ts:
+                last_seen = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+
+        # Get first tx separately if there are many
+        if tx_count > 0:
+            try:
+                r2 = requests.get(
+                    f"https://blockchain.info/rawaddr/{address}?limit=1&offset={max(0, tx_count-1)}",
+                    headers=HEADERS, timeout=10
+                )
+                if r2.status_code == 200:
+                    txs2 = r2.json().get("txs", [])
+                    if txs2:
+                        ts2 = txs2[0].get("time")
+                        if ts2:
+                            first_seen = datetime.fromtimestamp(ts2, tz=timezone.utc).isoformat()
+            except Exception:
+                pass
+
+        return {
+            "currency":           "BTC",
+            "address":            address,
+            "tx_count":           tx_count,
+            "total_received":     received_btc,
+            "total_received_usd": received_btc * price_usd,
+            "balance":            data.get("final_balance", 0) / 1e8,
+            "first_seen":         first_seen,
+            "last_seen":          last_seen,
+            "is_active":          tx_count > 0,
+            "explorer_url":       f"https://blockchair.com/bitcoin/address/{address}",
+            "source":             "blockchain.info",
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def _analyze_btc_mempool(address: str) -> dict:
+    """mempool.space API — free, no key."""
+    try:
+        r = requests.get(
+            f"https://mempool.space/api/address/{address}",
+            headers=HEADERS, timeout=15
+        )
+        if r.status_code != 200:
+            return {"error": f"mempool.space returned {r.status_code}"}
+
+        data  = r.json()
+        chain = data.get("chain_stats", {})
+        mem   = data.get("mempool_stats", {})
+
+        received_sat = chain.get("funded_txo_sum", 0)
+        received_btc = received_sat / 1e8
+        tx_count     = chain.get("tx_count", 0) + mem.get("tx_count", 0)
+        price_usd    = _get_btc_price()
+
+        return {
+            "currency":           "BTC",
+            "address":            address,
+            "tx_count":           tx_count,
+            "total_received":     received_btc,
+            "total_received_usd": received_btc * price_usd,
+            "balance":            (chain.get("funded_txo_sum", 0) - chain.get("spent_txo_sum", 0)) / 1e8,
+            "first_seen":         None,
+            "last_seen":          None,
+            "is_active":          tx_count > 0,
+            "explorer_url":       f"https://blockchair.com/bitcoin/address/{address}",
+            "source":             "mempool.space",
+        }
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def _analyze_btc_blockchair(address: str) -> dict:
+    """Blockchair fallback."""
     try:
         r = requests.get(
             f"https://api.blockchair.com/bitcoin/dashboards/address/{address}",
             headers=HEADERS, timeout=15
         )
         if r.status_code != 200:
-            return {"error": f"Blockchair returned {r.status_code}"}
+            return {"error": f"Blockchair returned {r.status_code}",
+                    "currency": "BTC", "address": address}
 
         data = r.json().get("data", {}).get(address, {})
         addr = data.get("address", {})
         txs  = data.get("transactions", [])
-
         received_btc = addr.get("received", 0) / 1e8
         price_usd    = _get_btc_price()
 
@@ -52,6 +168,7 @@ def analyze_bitcoin(address: str) -> dict:
             "last_seen":          txs[0] if txs else None,
             "is_active":          addr.get("transaction_count", 0) > 0,
             "explorer_url":       f"https://blockchair.com/bitcoin/address/{address}",
+            "source":             "blockchair",
         }
     except Exception as e:
         return {"error": str(e), "currency": "BTC", "address": address}
