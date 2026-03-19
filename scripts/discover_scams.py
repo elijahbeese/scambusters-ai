@@ -37,6 +37,15 @@ WHITELIST = {
     "urlscan.io", "virustotal.com", "shodan.io", "whois.com",
 }
 
+# Legitimate hosting platforms — subdomains on these are low value
+# (takedown goes to the platform, not a registrar)
+HOSTING_PLATFORMS = {
+    "webflow.io", "typedream.app", "gitbook.io", "godaddysites.com",
+    "wixsite.com", "weebly.com", "squarespace.com", "netlify.app",
+    "vercel.app", "pages.dev", "github.io", "gitlab.io",
+    "backblazeb2.com", "s3.amazonaws.com", "imweb.me",
+}
+
 # Keywords that strongly indicate HYIP/investment scam
 HYIP_KEYWORDS = [
     "stake", "invest", "profit", "yield", "return", "capital",
@@ -48,7 +57,7 @@ HYIP_KEYWORDS = [
 
 
 def clean_domain(url: str) -> str | None:
-    """Extract clean domain from URL."""
+    """Extract clean domain from URL, filtering known platforms."""
     try:
         if not url.startswith("http"):
             url = "https://" + url
@@ -57,7 +66,12 @@ def clean_domain(url: str) -> str | None:
         domain = domain.lstrip("www.").strip().lower()
         if "." not in domain or len(domain) < 4:
             return None
+        # Filter whitelist
         if any(w in domain for w in WHITELIST):
+            return None
+        # Filter hosting platforms (subdomain scams — low priority)
+        if any(domain.endswith("." + p) or domain == p
+               for p in HOSTING_PLATFORMS):
             return None
         return domain
     except Exception:
@@ -93,90 +107,87 @@ def scrape_hyipexplorer() -> list:
     return domains
 
 
-def scrape_goldpoll() -> list:
-    """Scrape GoldPoll HYIP monitor."""
-    domains = []
-    try:
-        for page in range(1, 4):
-            r = requests.get(
-                f"https://goldpoll.com/hyip-monitors/?page={page}",
-                headers=HEADERS, timeout=20
-            )
-            soup = BeautifulSoup(r.text, "lxml")
-            for a in soup.find_all("a", href=True):
-                href = a["href"]
-                if "goldpoll.com" not in href and href.startswith("http"):
-                    d = clean_domain(href)
-                    if d and d not in domains:
-                        domains.append(d)
-            time.sleep(1)
-        print(f"  [discover] GoldPoll: {len(domains)} domains")
-    except Exception as e:
-        print(f"  [discover] GoldPoll failed: {e}")
-    return domains
-
-
-def scrape_hyiplogs() -> list:
-    """Scrape HYIPLogs monitor."""
+def scrape_allhyipmonitors() -> list:
+    """Scrape AllHYIPMonitors — active HYIP listing site."""
     domains = []
     try:
         r = requests.get(
-            "https://www.hyiplogs.com/",
+            "https://www.allhyipmonitors.com/",
             headers=HEADERS, timeout=20
         )
         soup = BeautifulSoup(r.text, "lxml")
         for a in soup.find_all("a", href=True):
             href = a["href"]
-            if "hyiplogs.com" not in href and href.startswith("http"):
+            if "allhyipmonitors.com" not in href and href.startswith("http"):
                 d = clean_domain(href)
                 if d and d not in domains:
                     domains.append(d)
-        print(f"  [discover] HYIPLogs: {len(domains)} domains")
+        print(f"  [discover] AllHYIPMonitors: {len(domains)} domains")
     except Exception as e:
-        print(f"  [discover] HYIPLogs failed: {e}")
+        print(f"  [discover] AllHYIPMonitors failed: {e}")
     return domains
 
 
-def scrape_hyipbrowser() -> list:
-    """Scrape HYIPBrowser monitor."""
+def scrape_hyipmon() -> list:
+    """Scrape HYIPMon monitor."""
     domains = []
     try:
         r = requests.get(
-            "https://www.hyipbrowser.com/",
+            "https://hyipmon.com/",
             headers=HEADERS, timeout=20
         )
         soup = BeautifulSoup(r.text, "lxml")
         for a in soup.find_all("a", href=True):
             href = a["href"]
-            if "hyipbrowser.com" not in href and href.startswith("http"):
+            if "hyipmon.com" not in href and href.startswith("http"):
                 d = clean_domain(href)
                 if d and d not in domains:
                     domains.append(d)
-        print(f"  [discover] HYIPBrowser: {len(domains)} domains")
+        print(f"  [discover] HYIPMon: {len(domains)} domains")
     except Exception as e:
-        print(f"  [discover] HYIPBrowser failed: {e}")
+        print(f"  [discover] HYIPMon failed: {e}")
     return domains
 
 
-def scrape_hyiprating() -> list:
-    """Scrape HYIP Rating monitor."""
+def scrape_investfilter() -> list:
+    """Scrape InvestFilter — crypto investment monitor."""
     domains = []
     try:
         r = requests.get(
-            "https://hyiprating.com/",
+            "https://investfilter.com/",
             headers=HEADERS, timeout=20
         )
         soup = BeautifulSoup(r.text, "lxml")
-        # Look for program links
-        for a in soup.select("a.program-link, a.hyip-link, td a[href*='http']"):
-            href = a.get("href", "")
-            if "hyiprating.com" not in href and href.startswith("http"):
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            if "investfilter.com" not in href and href.startswith("http"):
                 d = clean_domain(href)
                 if d and d not in domains:
                     domains.append(d)
-        print(f"  [discover] HYIPRating: {len(domains)} domains")
+        print(f"  [discover] InvestFilter: {len(domains)} domains")
     except Exception as e:
-        print(f"  [discover] HYIPRating failed: {e}")
+        print(f"  [discover] InvestFilter failed: {e}")
+    return domains
+
+
+def scrape_earnmanual() -> list:
+    """Scrape EarnManual HYIP directory."""
+    domains = []
+    try:
+        r = requests.get(
+            "https://earnmanual.com/",
+            headers=HEADERS, timeout=20
+        )
+        soup = BeautifulSoup(r.text, "lxml")
+        for a in soup.find_all("a", href=True):
+            href = a["href"]
+            if "earnmanual.com" not in href and href.startswith("http"):
+                d = clean_domain(href)
+                if d and d not in domains:
+                    domains.append(d)
+        print(f"  [discover] EarnManual: {len(domains)} domains")
+    except Exception as e:
+        print(f"  [discover] EarnManual failed: {e}")
     return domains
 
 
@@ -377,16 +388,16 @@ def discover_scam_domains(max_domains: int = 200,
     print("\n[discover] Starting autonomous scam discovery...")
 
     sources = [
-        ("HYIP Explorer",   scrape_hyipexplorer),
-        ("GoldPoll",        scrape_goldpoll),
-        ("HYIPLogs",        scrape_hyiplogs),
-        ("HYIPBrowser",     scrape_hyipbrowser),
-        ("HYIPRating",      scrape_hyiprating),
-        ("URLScan",         scrape_urlscan_cryptoscam),
-        ("CryptoScamDB",    scrape_cryptoscamdb),
-        ("OpenPhish",       scrape_openphish),
-        ("PhishTank",       scrape_phishtank),
-        ("Telegram",        scrape_telegram_channels),
+        ("HYIP Explorer",      scrape_hyipexplorer),
+        ("AllHYIPMonitors",    scrape_allhyipmonitors),
+        ("HYIPMon",            scrape_hyipmon),
+        ("InvestFilter",       scrape_investfilter),
+        ("EarnManual",         scrape_earnmanual),
+        ("URLScan",            scrape_urlscan_cryptoscam),
+        ("CryptoScamDB",       scrape_cryptoscamdb),
+        ("OpenPhish",          scrape_openphish),
+        ("PhishTank",          scrape_phishtank),
+        ("Telegram",           scrape_telegram_channels),
     ]
 
     for name, func in sources:
