@@ -19,14 +19,55 @@ import string
 import asyncio
 import requests
 from datetime import datetime
-from dotenv import load_dotenv
-load_dotenv()
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 OPENAI_API_KEY    = os.getenv("OPENAI_API_KEY", "")
 ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
+
+
+def _create_guerrilla_session(username):
+    try:
+        r = requests.get(
+            f"https://api.guerrillamail.com/ajax.php?f=set_email_user&email_user={username}&lang=en",
+            headers={"User-Agent": "Mozilla/5.0"}, timeout=10
+        )
+        if r.status_code == 200:
+            return r.json().get("sid_token")
+    except Exception:
+        pass
+    return None
+
+
+def _get_verification_link(username, sid_token, timeout=60):
+    import time
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            r = requests.get(
+                f"https://api.guerrillamail.com/ajax.php?f=get_email_list&offset=0&sid_token={sid_token}",
+                headers={"User-Agent": "Mozilla/5.0"}, timeout=10
+            )
+            if r.status_code == 200:
+                for email in r.json().get("list", []):
+                    subject = email.get("mail_subject", "").lower()
+                    if any(kw in subject for kw in ["verify", "confirm", "activate", "account"]):
+                        mail_id = email.get("mail_id")
+                        r2 = requests.get(
+                            f"https://api.guerrillamail.com/ajax.php?f=fetch_email&email_id={mail_id}&sid_token={sid_token}",
+                            headers={"User-Agent": "Mozilla/5.0"}, timeout=10
+                        )
+                        if r2.status_code == 200:
+                            body = r2.json().get("mail_body", "")
+                            urls = re.findall(r'https?://\S+(?:verif|confirm|activ|token)\S+', body)
+                            if urls:
+                                return urls[0].rstrip('"').rstrip("'")
+        except Exception:
+            pass
+        time.sleep(5)
+    return None
+
 
 WALLET_PATTERNS = {
     "BTC":        r"\b(bc1[ac-hj-np-z02-9]{11,71}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})\b",
@@ -80,7 +121,7 @@ def generate_fake_identity() -> dict:
     first    = random.choice(first_names)
     last     = random.choice(last_names)
     username = f"{first.lower()}{last.lower()}{random.randint(1000, 9999)}"
-    email    = f"{username}@mailinator.com"
+    email    = f"{username}@guerrillamailblock.com"
     chars    = string.ascii_letters + string.digits
     password = "".join(random.choices(chars, k=10)) + "1Aa!"
     return {
@@ -468,9 +509,8 @@ async def _attempt_registration(page, base_url: str, identity: dict) -> bool:
             
             post_url = page.url
             post_content = await page.content()
-            # Check URL for known error patterns, not page content (success pages can contain "error" in HTML)
-            has_error = any(kw in post_url.lower() for kw in
-                           ["/error", "/fail", "/invalid", "error=1", "itts"])
+            has_error = any(kw in post_content.lower() for kw in
+                           ["wrong", "invalid", "error", "failed", "incorrect"])
             
             print(f"  [harvester] Registration at {path} → {post_url} error={has_error}")
 
@@ -480,6 +520,23 @@ async def _attempt_registration(page, base_url: str, identity: dict) -> bool:
             if await _check_logged_in(page):
                 print(f"  [harvester] Auto-logged in after registration")
                 return True
+
+            # Check if email verification required
+            post_content_lower = (await page.content()).lower()
+            needs_verify = any(kw in post_content_lower for kw in
+                              ["verify your email", "verification", "confirm your email",
+                               "check your email", "activate your account", "validate"])
+            if needs_verify:
+                print(f"  [harvester] Email verification required — polling Guerrilla Mail...")
+                uname = identity["email"].split("@")[0]
+                sid = _create_guerrilla_session(uname)
+                if sid:
+                    verify_url = _get_verification_link(uname, sid, timeout=60)
+                    if verify_url:
+                        print(f"  [harvester] Clicking verification link...")
+                        await page.goto(verify_url, wait_until="domcontentloaded", timeout=15000)
+                        await page.wait_for_timeout(2000)
+                        print(f"  [harvester] After verification: {page.url}")
 
             return True  # Registration attempted, proceed to login
 
@@ -505,32 +562,14 @@ async def _attempt_login(page, base_url: str, identity: dict) -> bool:
             if not filled:
                 continue
 
-            # Solve captcha on login page if present
-            captcha_answer = await _solve_captcha_with_vision(page, base_url)
-            if captcha_answer:
-                for captcha_sel in [
-                    'input[name="botCheck"]', 'input[name="captcha"]',
-                    'input[id="captcha"]', 'input[class*="captcha"]',
-                ]:
-                    try:
-                        el = await page.query_selector(captcha_sel)
-                        if el and await el.is_visible():
-                            await el.fill(captcha_answer)
-                            break
-                    except Exception:
-                        continue
-
             await _submit_form(page)
             await page.wait_for_timeout(3000)
 
-            post_url = page.url
-            print(f"  [harvester] Login via {path} → {post_url}")
             if await _check_logged_in(page):
                 print(f"  [harvester] Login successful via {path}")
                 return True
 
-        except Exception as e:
-            print(f"  [harvester] Login {path} exception: {e}")
+        except Exception:
             continue
     return False
 
