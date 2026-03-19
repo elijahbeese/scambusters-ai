@@ -1,15 +1,10 @@
 """
 agent.py — ScamBusters Agent v2.0 Orchestrator
-9-stage investigation pipeline:
-1. URLScan (infrastructure + similar sites)
-2. WHOIS (registrar + SOA email)
-3. Passive DNS (historical IPs + linked domains)
-4. Social OSINT (social links + wallets from HTML)
-5. Certificate OSINT (crt.sh subdomains + VirusTotal + Shodan)
-6. Blockchain analysis (wallet transaction history + USD amounts)
-7. AI Report (GPT-4o intelligence summary)
-8. Risk Scoring (weighted 0-100 score)
-9. Takedown + LE Package generation
+9-stage investigation pipeline with improved data flow between stages.
+Key fixes:
+- Primary IP passed to passive DNS for IP pivot
+- SOA email passed to passive DNS for operator clustering
+- All stages get data from previous stages
 """
 
 import os
@@ -31,17 +26,14 @@ from scripts.takedown_drafter    import draft_all_takedowns
 from scripts.le_packager         import build_le_package, generate_ic3_narrative
 from scripts.submission_packager import build_submission_package
 from scripts.network_graph       import build_graph_from_investigation
-from scripts.db                  import (save_investigation, update_status,
-                                          update_bounty_risk, upsert_wallet)
+from scripts.db                  import (add_bounty, save_investigation,
+                                          update_status, update_bounty_risk,
+                                          upsert_wallet, init_db)
 
 OUTPUT_DIR = os.getenv("OUTPUT_DIR", "outputs/")
 
 
 def run_investigation(bounty: dict, progress_callback=None) -> dict:
-    """
-    Run the full 9-stage investigation pipeline.
-    progress_callback(stage, message) for live UI updates via SSE.
-    """
     domain    = bounty["domain"]
     bounty_id = bounty["bounty_id"]
     results   = {}
@@ -53,73 +45,96 @@ def run_investigation(bounty: dict, progress_callback=None) -> dict:
 
     update_status(bounty_id, "investigating")
 
-    # ── Stage 1: URLScan ──────────────────────────────────────────────────────
+    # Stage 1: URLScan
     progress("urlscan", f"Scanning {domain} on URLScan.io...")
-    results["urlscan"] = run_urlscan(domain)
-    results["similar_domains"] = results["urlscan"].pop("similar_domains", [])
+    urlscan_data = run_urlscan(domain)
+    similar_domains = urlscan_data.pop("similar_domains", [])
+    results["urlscan"] = urlscan_data
+    results["similar_domains"] = similar_domains
+    primary_ip = urlscan_data.get("primary_ip")
+    asn_name   = urlscan_data.get("asn_name")
     progress("urlscan",
-             f"IP: {results['urlscan'].get('primary_ip')} | "
-             f"{len(results['similar_domains'])} similar sites")
+             f"IP: {primary_ip or 'not found'} | ASN: {asn_name or 'unknown'} | "
+             f"{len(similar_domains)} similar sites")
 
-    # ── Stage 2: WHOIS ────────────────────────────────────────────────────────
-    progress("whois", "Running WHOIS lookup...")
+    # Stage 2: WHOIS
+    progress("whois", "Running WHOIS + RDAP lookup...")
     results["whois"] = run_whois(domain)
+    soa_email   = results["whois"].get("soa_email")
+    registrar   = results["whois"].get("registrar")
+    abuse_email = results["whois"].get("registrar_abuse_email")
     progress("whois",
-             f"Registrar: {results['whois'].get('registrar')} | "
-             f"SOA: {results['whois'].get('soa_email', 'not found')}")
+             f"Registrar: {registrar or 'unknown'} | "
+             f"Abuse: {abuse_email or 'not found'} | "
+             f"SOA: {soa_email or 'not found'}")
 
-    # ── Stage 3: Passive DNS ──────────────────────────────────────────────────
-    progress("passive_dns", "Pivoting on Passive DNS...")
-    soa_email = results["whois"].get("soa_email")
-    results["passive_dns"] = run_passive_dns(domain, soa_email=soa_email)
-    linked = len(results["passive_dns"].get("linked_domains", []))
+    # Stage 3: Passive DNS (now gets IP + SOA from previous stages)
+    progress("passive_dns", f"Pivoting on Passive DNS...")
+    results["passive_dns"] = run_passive_dns(
+        domain,
+        soa_email=soa_email,
+        primary_ip=primary_ip
+    )
+    linked  = len(results["passive_dns"].get("linked_domains", []))
     cluster = len(results["passive_dns"].get("soa_cluster_domains", []))
-    progress("passive_dns", f"{linked} linked domains | {cluster} SOA cluster domains")
+    pivots  = len(results["passive_dns"].get("ip_pivot_domains", []))
+    progress("passive_dns",
+             f"{linked} linked | {cluster} SOA cluster | {pivots} IP pivot domains")
 
-    # ── Stage 4: Social OSINT ─────────────────────────────────────────────────
-    progress("social_osint", "Extracting social links and wallet addresses...")
+    # Stage 4: Social OSINT
+    progress("social_osint", "Deep-scraping site for social links, wallets, phones...")
     results["social_osint"] = run_social_osint(domain)
     wallets_found = sum(
-        len(v) for v in
-        results["social_osint"].get("wallets_from_html", {}).values()
+        len(v) for v in results["social_osint"].get("wallets_from_html", {}).values()
     )
-    progress("social_osint", f"{wallets_found} wallet addresses extracted from HTML")
+    phones_found  = len(results["social_osint"].get("contact_info", {}).get("phones", []))
+    emails_found  = len(results["social_osint"].get("contact_info", {}).get("emails", []))
+    pages_scraped = results["social_osint"].get("pages_scraped", 1)
+    progress("social_osint",
+             f"{wallets_found} wallets | {phones_found} phones | "
+             f"{emails_found} emails | {pages_scraped} pages scraped")
 
-    # ── Stage 5: Certificate OSINT ────────────────────────────────────────────
+    # Stage 5: Certificate OSINT
     progress("cert_osint", "Running crt.sh + VirusTotal + Shodan...")
-    primary_ip = results["urlscan"].get("primary_ip")
     cert_data = run_cert_osint(domain, ip=primary_ip)
     results["cert_osint"] = cert_data.get("crtsh", {})
     results["virustotal"] = cert_data.get("virustotal", {})
     results["shodan"]     = cert_data.get("shodan", {})
-    subdomains = len(results["cert_osint"].get("subdomains", []))
-    vt_hits    = results["virustotal"].get("malicious_votes", 0)
-    progress("cert_osint", f"{subdomains} subdomains | {vt_hits} VT malicious votes")
+    subdomains = len((results["cert_osint"] or {}).get("subdomains", []))
+    vt_hits    = (results["virustotal"] or {}).get("malicious_votes", 0)
+    vt_susp    = (results["virustotal"] or {}).get("suspicious_votes", 0)
+    ports      = len((results["shodan"] or {}).get("open_ports", []))
+    progress("cert_osint",
+             f"{subdomains} subdomains | VT: {vt_hits} malicious, "
+             f"{vt_susp} suspicious | {ports} open ports")
 
-    # ── Stage 6: Blockchain Analysis ─────────────────────────────────────────
+    # Stage 6: Blockchain
     progress("blockchain", "Analyzing crypto wallet transaction history...")
     all_wallets = results["social_osint"].get("wallets_from_html", {})
     if all_wallets:
         blockchain_data = analyze_all_wallets(all_wallets)
         results["blockchain"] = blockchain_data
-        total_usd = blockchain_data.get("total_usd", 0)
-        progress("blockchain", f"${total_usd:,.2f} traced on-chain across {blockchain_data.get('wallet_count', 0)} wallets")
-
-        # Persist wallets to DB
+        total_usd    = blockchain_data.get("total_usd", 0)
+        wallet_count = blockchain_data.get("wallet_count", 0)
+        progress("blockchain",
+                 f"${total_usd:,.2f} traced on-chain | {wallet_count} wallets")
         for currency, wallet_list in blockchain_data.get("by_currency", {}).items():
             for w in wallet_list:
                 if isinstance(w, dict) and w.get("address"):
                     upsert_wallet(domain, bounty_id, currency, w["address"], w)
     else:
-        results["blockchain"] = {"total_usd": 0, "wallet_count": 0, "by_currency": {}}
-        progress("blockchain", "No wallet addresses found to analyze")
+        results["blockchain"] = {
+            "total_usd": 0, "wallet_count": 0, "by_currency": {},
+            "note": "No wallets in HTML. Manual deposit page extraction required."
+        }
+        progress("blockchain", "No wallets in HTML — manual extraction needed")
 
-    # ── Stage 7: AI Report ────────────────────────────────────────────────────
+    # Stage 7: AI Report
     progress("report", "Generating AI intelligence report (GPT-4o)...")
     results["ai_report"] = generate_report(domain, results)
     progress("report", "Intelligence report generated")
 
-    # ── Stage 8: Risk Scoring ─────────────────────────────────────────────────
+    # Stage 8: Risk Scoring
     progress("risk", "Calculating risk score...")
     risk = score_investigation(results)
     results["risk_score"]     = risk["score"]
@@ -128,7 +143,7 @@ def run_investigation(bounty: dict, progress_callback=None) -> dict:
     update_bounty_risk(bounty_id, risk["score"], risk["level"])
     progress("risk", f"{risk['level']} ({risk['score']}/100) — {risk['summary']}")
 
-    # ── Stage 9: Takedowns + LE Package ──────────────────────────────────────
+    # Stage 9: Takedowns + LE Package
     progress("takedowns", "Drafting takedown emails...")
     takedowns = draft_all_takedowns(domain, results)
     results["takedown_registrar"] = takedowns.get("registrar")
@@ -140,7 +155,7 @@ def run_investigation(bounty: dict, progress_callback=None) -> dict:
     le_pkg["ic3_narrative"] = generate_ic3_narrative(le_pkg)
     results["le_package"] = le_pkg
 
-    # Build network graph edges
+    # Network graph
     progress("graph", "Building network graph...")
     try:
         build_graph_from_investigation(domain, results)
@@ -148,31 +163,32 @@ def run_investigation(bounty: dict, progress_callback=None) -> dict:
     except Exception as e:
         progress("graph", f"Graph build failed (non-critical): {e}")
 
-    # Persist everything
+    # Save to DB and disk
     save_investigation(bounty_id, domain, results)
     update_status(bounty_id, "complete")
 
-    # Save JSON to disk
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    out_file = os.path.join(
-        OUTPUT_DIR,
-        f"{bounty_id}_{domain.replace('.', '_')}.json"
-    )
+    out_file = os.path.join(OUTPUT_DIR,
+        f"{bounty_id}_{domain.replace('.', '_')}.json")
     with open(out_file, "w") as f:
         json.dump({**bounty, **results}, f, indent=2, default=str)
 
-    progress("done", f"Complete — {risk['level']} risk | ${results['blockchain'].get('total_usd', 0):,.0f} traced | saved to {out_file}")
+    total_usd = results["blockchain"].get("total_usd", 0)
+    progress("done",
+             f"Complete — {risk['level']} ({risk['score']}/100) | "
+             f"${total_usd:,.0f} traced | {cluster} operator-linked domains | "
+             f"saved to {out_file}")
+
     return results
 
 
 if __name__ == "__main__":
     import sys
-    from scripts.db import init_db, add_bounty
     init_db()
 
-    domain = sys.argv[1] if len(sys.argv) > 1 else "aitimart.com"
+    domain = sys.argv[1] if len(sys.argv) > 1 else "stake2earn.app"
     test_bounty = {
-        "bounty_id":  f"test_{domain.replace('.','_')}",
+        "bounty_id":  f"test_{domain.replace('.', '_')}",
         "domain":     domain,
         "target_url": f"https://{domain}",
         "sponsor":    "test",
