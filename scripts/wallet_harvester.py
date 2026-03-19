@@ -21,6 +21,46 @@ load_dotenv(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file_
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY", "")
 
+
+import imaplib
+import email as email_lib
+from email.header import decode_header
+
+GMAIL_ADDRESS  = os.getenv("GMAIL_ADDRESS", "")
+GMAIL_APP_PASSWORD = os.getenv("GMAIL_APP_PASSWORD", "")
+
+
+def _get_gmail_verification_link(timeout: int = 90) -> str | None:
+    """Poll Gmail inbox via IMAP for verification link."""
+    import time
+    start = time.time()
+    while time.time() - start < timeout:
+        try:
+            mail = imaplib.IMAP4_SSL("imap.gmail.com")
+            mail.login(GMAIL_ADDRESS, GMAIL_APP_PASSWORD)
+            mail.select("inbox")
+            _, msgs = mail.search(None, "UNSEEN")
+            for num in reversed(msgs[0].split()):
+                _, data = mail.fetch(num, "(RFC822)")
+                msg = email_lib.message_from_bytes(data[0][1])
+                body = ""
+                if msg.is_multipart():
+                    for part in msg.walk():
+                        if part.get_content_type() == "text/html":
+                            body += part.get_payload(decode=True).decode(errors="ignore")
+                else:
+                    body = msg.get_payload(decode=True).decode(errors="ignore")
+                pattern = r'https?://[^\s"'<>]+(?:verif|confirm|activ|token|valid)[^\s"'<>]+'
+                urls = re.findall(pattern, body)
+                if urls:
+                    mail.logout()
+                    return urls[0].rstrip('"').rstrip("'")
+            mail.logout()
+        except Exception as e:
+            print(f"  [harvester] Gmail IMAP error: {e}")
+        time.sleep(8)
+    return None
+
 WALLET_PATTERNS = {
     "BTC":        r"\b(bc1[ac-hj-np-z02-9]{11,71}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})\b",
     "ETH":        r"\b(0x[a-fA-F0-9]{40})\b",
@@ -77,7 +117,7 @@ def generate_fake_identity() -> dict:
         _domain = _r.json()["hydra:member"][0]["domain"] if _r.status_code == 200 else "sharebot.net"
     except Exception:
         _domain = "sharebot.net"
-    email    = f"{username}@{_domain}"
+    email    = GMAIL_ADDRESS if GMAIL_ADDRESS else f"{username}@{_domain}"
     chars    = string.ascii_letters + string.digits
     password = "".join(random.choices(chars, k=10)) + "1Aa!"
     return {
@@ -420,9 +460,8 @@ async def _attempt_registration(page, base_url: str, identity: dict) -> bool:
                                ["verify your email", "verification", "confirm your email",
                                 "check your email", "activate your account", "validate"])
             if needs_verify:
-                print(f"  [harvester] Email verification required — using mail.tm...")
-                token = _create_mailtm_account(identity["email"], identity["password"])
-                verify_url = _get_mailtm_verification_link(token, timeout=90) if token else None
+                print(f"  [harvester] Email verification required — checking Gmail...")
+                verify_url = _get_gmail_verification_link(timeout=90) if GMAIL_ADDRESS else None
                 if verify_url:
                     print(f"  [harvester] Clicking verification link...")
                     await page.goto(verify_url, wait_until="domcontentloaded", timeout=15000)
