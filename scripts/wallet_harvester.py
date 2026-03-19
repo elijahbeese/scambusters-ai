@@ -19,6 +19,8 @@ import string
 import asyncio
 import requests
 from datetime import datetime
+from dotenv import load_dotenv
+load_dotenv()
 from pathlib import Path
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -466,8 +468,9 @@ async def _attempt_registration(page, base_url: str, identity: dict) -> bool:
             
             post_url = page.url
             post_content = await page.content()
-            has_error = any(kw in post_content.lower() for kw in
-                           ["wrong", "invalid", "error", "failed", "incorrect"])
+            # Check URL for known error patterns, not page content (success pages can contain "error" in HTML)
+            has_error = any(kw in post_url.lower() for kw in
+                           ["/error", "/fail", "/invalid", "error=1", "itts"])
             
             print(f"  [harvester] Registration at {path} → {post_url} error={has_error}")
 
