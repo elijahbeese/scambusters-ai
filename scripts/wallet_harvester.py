@@ -117,7 +117,13 @@ def generate_fake_identity() -> dict:
         _domain = _r.json()["hydra:member"][0]["domain"] if _r.status_code == 200 else "sharebot.net"
     except Exception:
         _domain = "sharebot.net"
-    email    = GMAIL_ADDRESS if GMAIL_ADDRESS else f"{username}@{_domain}"
+    if GMAIL_ADDRESS:
+        # Gmail plus addressing — unique per site but all go to same inbox
+        _base = GMAIL_ADDRESS.split("@")[0]
+        _domain_part = GMAIL_ADDRESS.split("@")[1]
+        email = f"{_base}+{username}@{_domain_part}"
+    else:
+        email = f"{username}@{_domain}"
     chars    = string.ascii_letters + string.digits
     password = "".join(random.choices(chars, k=10)) + "1Aa!"
     return {
