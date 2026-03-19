@@ -10,7 +10,9 @@ Fixed:
 """
 
 import os
+import sys
 import re
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 import json
 import random
 import string
@@ -19,7 +21,7 @@ from datetime import datetime
 from pathlib import Path
 
 WALLET_PATTERNS = {
-    "BTC":        r"\b(bc1[a-zA-Z0-9]{25,62}|[13][a-zA-Z0-9]{25,34})\b",
+    "BTC":        r"\b(bc1[ac-hj-np-z02-9]{11,71}|[13][a-km-zA-HJ-NP-Z1-9]{25,34})\b",
     "ETH":        r"\b(0x[a-fA-F0-9]{40})\b",
     "USDT_TRC20": r"\b(T[A-Za-z0-9]{33})\b",
     "LTC":        r"\b(ltc1[a-zA-Z0-9]{25,62}|[LM][a-zA-Z0-9]{26,33})\b",
@@ -46,7 +48,7 @@ DEPOSIT_PATHS = [
     "/dashboard/deposit", "/dashboard/invest",
     "/account/deposit", "/wallet/deposit",
     "/plans", "/packages", "/invest/plans",
-    "/crypto/deposit", "/fund/deposit",
+    "/crypto/deposit", "/fund/deposit", "/?a=deposit", "/?a=invest", "/?a=wallet", "/?a=dashboard",
     "/user/dashboard", "/dashboard", "/home",
     "/user/home", "/member/deposit",
 ]
@@ -54,7 +56,7 @@ DEPOSIT_PATHS = [
 REGISTER_PATHS = [
     "/register", "/signup", "/sign-up",
     "/user/register", "/account/register",
-    "/auth/register", "/join", "/create-account",
+    "/auth/register", "/join", "/create-account", "/?a=signup", "/?a=register", "/?a=join",
     "/en/register", "/app/register",
 ]
 
@@ -63,6 +65,7 @@ LOGIN_PATHS = [
     "/user/login", "/account/login",
     "/auth/login", "/user/signin",
     "/en/login", "/app/login",
+    "/?a=login", "/?a=signin",
 ]
 
 # Indicators that we're logged in (on dashboard)
@@ -181,6 +184,30 @@ async def _fill_form_fields(page, identity: dict):
             'input[name="referral"]', 'input[name="ref"]',
             'input[name="referral_code"]', 'input[placeholder*="referral" i]',
         ],
+        "full_name": [
+            'input[name="full_name"]', 'input[name="fullname"]',
+            'input[name="name"]', 'input[placeholder*="full name" i]',
+            'input[placeholder*="your name" i]', 'input[id*="fullname" i]',
+        ],
+        "confirm_email": [
+            'input[name="confirm_email"]', 'input[name="email_confirm"]',
+            'input[name="email2"]', 'input[placeholder*="confirm email" i]',
+            'input[placeholder*="re-enter email" i]',
+        ],
+        "btc_wallet": [
+            'input[placeholder*="bitcoin wallet" i]',
+            'input[placeholder*="btc wallet" i]',
+            'input[placeholder*="bitcoin address" i]',
+            'input[name*="bitcoin" i]', 'input[name*="btc" i]',
+        ],
+        "usdt_wallet": [
+            'input[placeholder*="usdt" i]', 'input[placeholder*="trc20" i]',
+            'input[placeholder*="tether" i]', 'input[name*="usdt" i]',
+        ],
+        "eth_wallet": [
+            'input[placeholder*="ethereum" i]', 'input[placeholder*="eth wallet" i]',
+            'input[placeholder*="ethereum address" i]', 'input[name*="eth" i]',
+        ],
     }
 
     values = {
@@ -192,6 +219,11 @@ async def _fill_form_fields(page, identity: dict):
         "phone":            identity["phone"],
         "confirm_password": identity["password"],
         "referral":         identity["referral"],
+        "full_name":        f"{identity['first_name']} {identity['last_name']}",
+        "confirm_email":    identity["email"],
+        "btc_wallet":       "1A1zP1eP5QGefi2DMPTfTL5SLmv7Divf6a",
+        "usdt_wallet":      "TR7NHqjeKQxGTCi8q8ZY4pL8otSzgjLj6t",
+        "eth_wallet":       "0x0000000000000000000000000000000000000001",
     }
 
     filled = []
@@ -274,7 +306,33 @@ async def _attempt_login(page, base_url: str, identity: dict) -> bool:
             if 'password' not in content.lower():
                 continue
 
-            await _fill_form_fields(page, identity)
+            # Try filling login form — sites use either email or username
+            filled = False
+            for user_selector in ['input[name="username"]', 'input[name="email"]',
+                                  'input[type="email"]', 'input[name="login"]']:
+                try:
+                    el = await page.query_selector(user_selector)
+                    if el and await el.is_visible():
+                        # Use username if field is named username, else email
+                        val = identity["username"] if "username" in user_selector else identity["email"]
+                        await el.fill(val)
+                        filled = True
+                        break
+                except Exception:
+                    continue
+
+            for pwd_selector in ['input[name="password"]', 'input[type="password"]']:
+                try:
+                    el = await page.query_selector(pwd_selector)
+                    if el and await el.is_visible():
+                        await el.fill(identity["password"])
+                        break
+                except Exception:
+                    continue
+
+            if not filled:
+                continue
+
             await _submit_form(page)
             await page.wait_for_timeout(3000)
 
@@ -286,6 +344,131 @@ async def _attempt_login(page, base_url: str, identity: dict) -> bool:
             continue
 
     return False
+
+
+async def _submit_deposit_form(page, base_url: str, output_dir: str, domain: str) -> dict:
+    """
+    Submit a deposit form to reveal the scam wallet address.
+    Handles two patterns:
+    1. Query param style: /?a=deposit
+    2. Path style: /deposit
+    Tries BTC first, then USDT, then ETH.
+    """
+    wallets = {}
+    deposit_urls = [
+        base_url + "/?a=deposit",
+        base_url + "/deposit",
+        base_url + "/user/deposit",
+        base_url + "/dashboard/deposit",
+    ]
+
+    for deposit_url in deposit_urls:
+        try:
+            r = await page.goto(deposit_url, wait_until="domcontentloaded", timeout=15000)
+            if not r or r.status in (404, 403, 500):
+                continue
+
+            await page.wait_for_timeout(1500)
+            content = await page.content()
+
+            # Check if this is actually a deposit page
+            if not any(kw in content.lower() for kw in
+                       ["deposit", "invest", "plan", "amount", "payment"]):
+                continue
+
+            # Select first available plan
+            try:
+                select = await page.query_selector("select")
+                if select:
+                    options = await select.query_selector_all("option")
+                    # Pick first non-empty option
+                    for opt in options:
+                        val = await opt.get_attribute("value") or ""
+                        if val and val != "0":
+                            await select.select_option(val)
+                            break
+            except Exception:
+                pass
+
+            # Fill amount
+            try:
+                amt = await page.query_selector('input[name="amount"]')
+                if amt:
+                    await amt.fill("50")
+            except Exception:
+                pass
+
+            # Try each payment type
+            payment_values = [
+                "process_1000",  # BTC
+                "process_1001",  # USDT
+                "process_1002",  # ETH
+            ]
+
+            for payment_val in payment_values:
+                try:
+                    radio = await page.query_selector(f'input[value="{payment_val}"]')
+                    if not radio:
+                        # Try generic radio buttons
+                        radios = await page.query_selector_all('input[type="radio"]')
+                        if radios:
+                            radio = radios[0]
+                    if radio:
+                        await radio.click()
+                        await page.wait_for_timeout(500)
+                        break
+                except Exception:
+                    continue
+
+            # Submit
+            submitted = False
+            for selector in ['button[type="submit"]', 'input[type="submit"]',
+                             'button:has-text("Deposit")', 'button:has-text("Invest")',
+                             'button:has-text("Continue")', 'button:has-text("Proceed")']:
+                try:
+                    btn = await page.query_selector(selector)
+                    if btn and await btn.is_visible():
+                        await btn.click()
+                        submitted = True
+                        break
+                except Exception:
+                    continue
+
+            if not submitted:
+                continue
+
+            await page.wait_for_timeout(4000)
+
+            # Extract wallet from reveal page
+            content = await page.content()
+            wallets = extract_wallets_from_text(content)
+
+            # Check all input values including readonly fields
+            inputs = await page.query_selector_all("input")
+            for inp in inputs:
+                val = await inp.get_attribute("value") or ""
+                if val:
+                    w = extract_wallets_from_text(val)
+                    _merge_wallets(wallets, w)
+
+            # Check data-clipboard-text attributes
+            els = await page.query_selector_all("[data-clipboard-text]")
+            for el in els:
+                val = await el.get_attribute("data-clipboard-text") or ""
+                if val:
+                    w = extract_wallets_from_text(val)
+                    _merge_wallets(wallets, w)
+
+            if wallets:
+                ss = f"{output_dir}/{domain.replace('.','_')}_deposit_reveal.png"
+                await page.screenshot(path=ss, full_page=True)
+                print(f"  [harvester] Wallet reveal screenshot: {ss}")
+                return wallets
+
+        except Exception:
+            continue
+
+    return wallets
 
 
 async def harvest_wallets(domain: str, output_dir: str = "outputs") -> dict:
@@ -366,11 +549,13 @@ async def harvest_wallets(domain: str, output_dir: str = "outputs") -> dict:
                     screenshots.append(ss)
                     registration_success = True
 
-                    # Check if we got logged in automatically after registration
-                    if await _check_logged_in(page):
-                        login_success = True
-                        print(f"  [harvester] Auto-logged in after registration")
-                        break
+                    # Always attempt explicit login after registration
+                    # (registration page may look like dashboard but session isn't set)
+                    print(f"  [harvester] Attempting login after registration...")
+                    login_success = await _attempt_login(page, base_url, identity)
+                    if login_success:
+                        print(f"  [harvester] Logged in after registration")
+                    break
 
                     # Check for verification requirement
                     content = await page.content()
@@ -448,6 +633,17 @@ async def harvest_wallets(domain: str, output_dir: str = "outputs") -> dict:
 
             except Exception:
                 continue
+
+        # ── Step 5: Submit deposit form to reveal wallet address ──────────────
+        if login_success and not all_wallets:
+            print(f"  [harvester] Trying deposit form submission to reveal wallet...")
+            try:
+                wallets = await _submit_deposit_form(page, base_url, output_dir, domain)
+                if wallets:
+                    _merge_wallets(all_wallets, wallets)
+                    print(f"  [harvester] WALLETS via deposit form: {wallets}")
+            except Exception as e:
+                print(f"  [harvester] Deposit form submission failed: {e}")
 
         await browser.close()
 
