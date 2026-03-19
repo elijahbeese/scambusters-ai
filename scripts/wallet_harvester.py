@@ -31,44 +31,38 @@ ANTHROPIC_API_KEY = os.getenv("ANTHROPIC_API_KEY", "")
 
 
 def _create_guerrilla_session(username):
-    try:
-        r = requests.get(
-            f"https://api.guerrillamail.com/ajax.php?f=set_email_user&email_user={username}&lang=en",
-            headers={"User-Agent": "Mozilla/5.0"}, timeout=10
-        )
-        if r.status_code == 200:
-            return r.json().get("sid_token")
-    except Exception:
-        pass
-    return None
+    return username  # yopmail needs no session
 
 
-def _get_verification_link(username, sid_token, timeout=60):
+def _get_verification_link(username, sid_token, timeout=90):
+    """Poll yopmail inbox for verification link."""
     import time
     start = time.time()
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+        "Accept": "text/html,application/xhtml+xml",
+    }
     while time.time() - start < timeout:
         try:
             r = requests.get(
-                f"https://api.guerrillamail.com/ajax.php?f=get_email_list&offset=0&sid_token={sid_token}",
-                headers={"User-Agent": "Mozilla/5.0"}, timeout=10
+                f"https://yopmail.com/en/inbox?login={username}&p=1&d=&ctrl=&scrl=&rnd=&yj=&yp=",
+                headers=headers, timeout=15
             )
             if r.status_code == 200:
-                for email in r.json().get("list", []):
-                    subject = email.get("mail_subject", "").lower()
-                    if any(kw in subject for kw in ["verify", "confirm", "activate", "account"]):
-                        mail_id = email.get("mail_id")
-                        r2 = requests.get(
-                            f"https://api.guerrillamail.com/ajax.php?f=fetch_email&email_id={mail_id}&sid_token={sid_token}",
-                            headers={"User-Agent": "Mozilla/5.0"}, timeout=10
-                        )
-                        if r2.status_code == 200:
-                            body = r2.json().get("mail_body", "")
-                            urls = re.findall(r'https?://\S+(?:verif|confirm|activ|token)\S+', body)
-                            if urls:
-                                return urls[0].rstrip('"').rstrip("'")
+                # Find all links in inbox
+                links = re.findall(r'id="([^"]+)"[^>]*class="[^"]*lm[^"]*"', r.text)
+                for mail_id in links[:5]:
+                    r2 = requests.get(
+                        f"https://yopmail.com/en/mail?id={mail_id}&login={username}",
+                        headers=headers, timeout=15
+                    )
+                    if r2.status_code == 200:
+                        urls = re.findall(r'https?://[^\s"'<>]+(?:verif|confirm|activ|token|valid)[^\s"'<>]+', r2.text)
+                        if urls:
+                            return urls[0].rstrip('"').rstrip("'").rstrip("\\")
         except Exception:
             pass
-        time.sleep(5)
+        time.sleep(8)
     return None
 
 
@@ -124,7 +118,7 @@ def generate_fake_identity() -> dict:
     first    = random.choice(first_names)
     last     = random.choice(last_names)
     username = f"{first.lower()}{last.lower()}{random.randint(1000, 9999)}"
-    email    = f"{username}@guerrillamailblock.com"
+    email    = f"{username}@yopmail.com"
     chars    = string.ascii_letters + string.digits
     password = "".join(random.choices(chars, k=10)) + "1Aa!"
     return {
@@ -531,9 +525,7 @@ async def _attempt_registration(page, base_url: str, identity: dict) -> bool:
             if needs_verify:
                 print(f"  [harvester] Email verification required — polling Guerrilla Mail...")
                 uname = identity["email"].split("@")[0]
-                sid = _create_guerrilla_session(uname)
-                if sid:
-                    verify_url = _get_verification_link(uname, sid, timeout=60)
+                verify_url = _get_verification_link(uname, uname, timeout=90)
                     if verify_url:
                         print(f"  [harvester] Clicking verification link...")
                         await page.goto(verify_url, wait_until="domcontentloaded", timeout=15000)
